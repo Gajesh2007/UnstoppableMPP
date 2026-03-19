@@ -99,13 +99,18 @@ export async function proxyCodexToChatGPT(
     const model = (body.model as string) || 'unknown'
     const usage: CodexUsage = { inputTokens: 0, cachedInputTokens: 0, outputTokens: 0, reasoningTokens: 0 }
 
-    // Pass through SSE events, extract full usage from response.completed
+    // Pass through SSE events, extract full usage from response.completed.
+    // Buffer incomplete lines across chunks to handle split SSE events.
+    let lineBuffer = ''
     const { readable, writable } = new TransformStream({
       transform(chunk, controller) {
         controller.enqueue(chunk)
 
-        const text = new TextDecoder().decode(chunk)
-        const lines = text.split('\n')
+        lineBuffer += new TextDecoder().decode(chunk)
+        const lines = lineBuffer.split('\n')
+        // Keep the last (potentially incomplete) line in the buffer
+        lineBuffer = lines.pop() || ''
+
         for (const line of lines) {
           if (!line.startsWith('data: ')) continue
           const data = line.slice(6).trim()
@@ -123,6 +128,25 @@ export async function proxyCodexToChatGPT(
         }
       },
       flush() {
+        // Process any remaining buffered data
+        if (lineBuffer.trim()) {
+          const lines = lineBuffer.split('\n')
+          for (const line of lines) {
+            if (!line.startsWith('data: ')) continue
+            const data = line.slice(6).trim()
+            if (data === '[DONE]') continue
+            try {
+              const parsed = JSON.parse(data)
+              if (parsed.type === 'response.completed' && parsed.response?.usage) {
+                const u = parsed.response.usage
+                usage.inputTokens = u.input_tokens || 0
+                usage.cachedInputTokens = u.input_tokens_details?.cached_tokens || 0
+                usage.outputTokens = u.output_tokens || 0
+                usage.reasoningTokens = u.output_tokens_details?.reasoning_tokens || 0
+              }
+            } catch { /* skip */ }
+          }
+        }
         recordCodexTransaction(token, model, usage)
           .catch((err) => console.error('[codex] Failed to record transaction:', err instanceof Error ? err.message : err))
       },
