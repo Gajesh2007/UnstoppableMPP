@@ -64,6 +64,7 @@ codex.get('/', (c) =>
     api: 'ChatGPT Codex Responses API',
     usage: 'POST /codex/responses',
     auth: 'ChatGPT session tokens (sellers authenticate via device code flow)',
+    disclaimer: 'This is experimental research software provided "as is" without warranty. Users are solely responsible for compliance with all applicable laws and third-party terms of service. Use at your own risk.',
   })
 )
 

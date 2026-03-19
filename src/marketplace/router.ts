@@ -210,6 +210,7 @@ marketplace.post('/codex/import', async (c) => {
       plan_type: stored.planType,
       account_id: stored.accountId,
       message: 'ChatGPT tokens imported. Your Codex credits are now available on the marketplace.',
+      disclaimer: 'By listing credentials you represent that you have the right to share them and accept full responsibility for any consequences. This platform does not encourage violation of any third-party terms of service.',
     }, 201)
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to import tokens'
