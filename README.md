@@ -184,13 +184,7 @@ Edit `.env` and set `DOMAIN=yourdomain.com`.
 ### 4. Deploy
 
 ```bash
-ecloud compute app deploy \
-  --name unstoppable-mpp \
-  --dockerfile Dockerfile \
-  --env-file .env \
-  --verifiable \
-  --repo https://github.com/Gajesh2007/UnstoppableMPP.git \
-  --commit $(git rev-parse HEAD)
+ecloud compute app deploy
 ```
 
 ### 5. Point DNS
@@ -257,6 +251,3 @@ src/
 
 This software is experimental and provided for research purposes only. It is not intended for production use in regulated environments. The authors make no guarantees about availability, correctness, or security. Users are responsible for complying with all applicable terms of service and laws in their jurisdiction. Use at your own risk.
 
-## License
-
-MIT

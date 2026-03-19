@@ -8,21 +8,24 @@ let interval: ReturnType<typeof setInterval> | null = null
 
 /**
  * Check a single API key by making a lightweight GET /v1/models call to OpenAI.
+ * Returns the HTTP status for eviction decisions.
  */
-async function checkKeyHealth(keyId: string, encryptedKey: string): Promise<boolean> {
+async function checkKeyHealth(encryptedKey: string): Promise<{ ok: boolean; status: number }> {
   try {
     const plainKey = decryptApiKey(encryptedKey)
     const response = await fetch('https://api.openai.com/v1/models', {
       headers: { Authorization: `Bearer ${plainKey}` },
     })
-    return response.status === 200
+    return { ok: response.status === 200, status: response.status }
   } catch {
-    return false
+    return { ok: false, status: 0 }
   }
 }
 
 /**
  * Run a health check on all active keys.
+ * Keys that fail with 401/403 (revoked/invalid) are evicted immediately.
+ * Keys that fail for transient reasons (429, network) get failure count incremented.
  */
 async function runHealthChecks() {
   const db = getDb()
@@ -30,36 +33,61 @@ async function runHealthChecks() {
     where: eq(apiKeys.isActive, true),
     columns: {
       id: true,
+      sellerId: true,
       encryptedKey: true,
-      isHealthy: true,
+      failureCount: true,
     },
   })
 
   const now = new Date()
   let healthy = 0
-  let unhealthy = 0
+  let evicted = 0
 
   for (const key of keys) {
-    const isHealthy = await checkKeyHealth(key.id, key.encryptedKey)
+    const { ok, status } = await checkKeyHealth(key.encryptedKey)
 
-    await db
-      .update(apiKeys)
-      .set({
-        isHealthy,
-        failureCount: isHealthy ? 0 : (key.isHealthy ? 1 : undefined),
-        lastHealthCheck: now,
-      })
-      .where(eq(apiKeys.id, key.id))
+    if (ok) {
+      await db
+        .update(apiKeys)
+        .set({ isHealthy: true, failureCount: 0, lastHealthCheck: now })
+        .where(eq(apiKeys.id, key.id))
+      healthy++
+      continue
+    }
 
-    if (isHealthy) healthy++
-    else unhealthy++
+    // 401/403 = key is revoked or invalid — evict immediately
+    if (status === 401 || status === 403) {
+      await db
+        .update(apiKeys)
+        .set({ isHealthy: false, isActive: false, lastHealthCheck: now })
+        .where(eq(apiKeys.id, key.id))
+      evicted++
+      console.warn(`[health] Key ${key.id} evicted (seller ${key.sellerId}) — OpenAI returned ${status}`)
+      continue
+    }
+
+    // Transient failure (429, network error) — increment failure count
+    const newCount = key.failureCount + 1
+    if (newCount >= 3) {
+      await db
+        .update(apiKeys)
+        .set({ isHealthy: false, isActive: false, failureCount: newCount, lastHealthCheck: now })
+        .where(eq(apiKeys.id, key.id))
+      evicted++
+      console.warn(`[health] Key ${key.id} evicted (seller ${key.sellerId}) — ${newCount} consecutive health check failures`)
+    } else {
+      await db
+        .update(apiKeys)
+        .set({ isHealthy: false, failureCount: newCount, lastHealthCheck: now })
+        .where(eq(apiKeys.id, key.id))
+    }
   }
 
-  console.log(`[health] Check complete: ${healthy} healthy, ${unhealthy} unhealthy out of ${keys.length} keys`)
+  const active = keys.length - evicted
+  console.log(`[health] Check complete: ${healthy} healthy, ${active - healthy} unhealthy, ${evicted} evicted out of ${keys.length} keys`)
 }
 
 export function startHealthMonitor() {
-  // Run immediately on startup
   runHealthChecks().catch((err) =>
     console.error('[health] Initial check failed:', err)
   )

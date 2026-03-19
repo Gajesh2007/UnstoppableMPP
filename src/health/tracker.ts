@@ -6,30 +6,36 @@ const FAILURE_THRESHOLD = 3
 
 /**
  * Record a failure for a key. After FAILURE_THRESHOLD consecutive failures,
- * the key is marked unhealthy and excluded from selection.
+ * the key is evicted (deactivated permanently) and excluded from selection.
  */
 export async function markKeyFailure(keyId: string) {
   const db = getDb()
   const key = await db.query.apiKeys.findFirst({
     where: eq(apiKeys.id, keyId),
-    columns: { failureCount: true },
+    columns: { failureCount: true, sellerId: true },
   })
 
   if (!key) return
 
   const newCount = key.failureCount + 1
-  const isHealthy = newCount < FAILURE_THRESHOLD
 
-  await db
-    .update(apiKeys)
-    .set({
-      failureCount: newCount,
-      isHealthy,
-    })
-    .where(eq(apiKeys.id, keyId))
+  if (newCount >= FAILURE_THRESHOLD) {
+    // Evict: deactivate permanently
+    await db
+      .update(apiKeys)
+      .set({
+        failureCount: newCount,
+        isHealthy: false,
+        isActive: false,
+      })
+      .where(eq(apiKeys.id, keyId))
 
-  if (!isHealthy) {
-    console.warn(`[health] Key ${keyId} marked unhealthy after ${newCount} consecutive failures`)
+    console.warn(`[health] Key ${keyId} evicted (seller ${key.sellerId}) — ${newCount} consecutive failures`)
+  } else {
+    await db
+      .update(apiKeys)
+      .set({ failureCount: newCount })
+      .where(eq(apiKeys.id, keyId))
   }
 }
 

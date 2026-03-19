@@ -49,10 +49,10 @@ describe('Health Tracker', () => {
     const db = getDb()
     const key = await db.query.apiKeys.findFirst({ where: eq(apiKeys.id, 'key-1') })
     expect(key!.failureCount).toBe(1)
-    expect(key!.isHealthy).toBe(true) // Still healthy after 1 failure
+    expect(key!.isActive).toBe(true) // Still active after 1 failure
   })
 
-  test('key marked unhealthy after 3 consecutive failures', async () => {
+  test('key evicted after 3 consecutive failures', async () => {
     await markKeyFailure('key-1')
     await markKeyFailure('key-1')
     await markKeyFailure('key-1')
@@ -61,14 +61,13 @@ describe('Health Tracker', () => {
     const key = await db.query.apiKeys.findFirst({ where: eq(apiKeys.id, 'key-1') })
     expect(key!.failureCount).toBe(3)
     expect(key!.isHealthy).toBe(false)
+    expect(key!.isActive).toBe(false) // Evicted — permanently deactivated
   })
 
-  test('markKeySuccess resets failure count and marks healthy', async () => {
-    // Fail twice
+  test('markKeySuccess resets failure count', async () => {
     await markKeyFailure('key-1')
     await markKeyFailure('key-1')
 
-    // Then succeed
     await markKeySuccess('key-1')
 
     const db = getDb()
@@ -77,22 +76,26 @@ describe('Health Tracker', () => {
     expect(key!.isHealthy).toBe(true)
   })
 
-  test('success after being marked unhealthy restores health', async () => {
+  test('evicted key stays evicted even after markKeySuccess', async () => {
+    // Evict the key
     await markKeyFailure('key-1')
     await markKeyFailure('key-1')
     await markKeyFailure('key-1')
 
     const db = getDb()
     let key = await db.query.apiKeys.findFirst({ where: eq(apiKeys.id, 'key-1') })
-    expect(key!.isHealthy).toBe(false)
+    expect(key!.isActive).toBe(false)
 
+    // markKeySuccess updates health/failure but isActive stays false
+    // (seller must re-register a new key)
     await markKeySuccess('key-1')
     key = await db.query.apiKeys.findFirst({ where: eq(apiKeys.id, 'key-1') })
     expect(key!.isHealthy).toBe(true)
     expect(key!.failureCount).toBe(0)
+    expect(key!.isActive).toBe(false) // Still evicted
   })
 
   test('markKeyFailure on nonexistent key does not throw', async () => {
-    await markKeyFailure('nonexistent-key') // should not throw
+    await markKeyFailure('nonexistent-key')
   })
 })
