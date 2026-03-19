@@ -1,6 +1,6 @@
 import { mnemonicToAccount, HDKey } from 'viem/accounts'
 import { mnemonicToSeedSync } from '@scure/bip39'
-import { PrivateKey, decrypt as eciesDecrypt } from 'eciesjs'
+import { PrivateKey, PublicKey, decrypt as eciesDecrypt, encrypt as eciesEncrypt } from 'eciesjs'
 import { config } from '../config'
 
 let _account: ReturnType<typeof mnemonicToAccount> | null = null
@@ -39,6 +39,14 @@ export function decryptApiKey(encryptedHex: string): string {
   const encrypted = Buffer.from(encryptedHex, 'hex')
   const decrypted = eciesDecrypt(_eciesPrivateKey.secret, encrypted)
   return Buffer.from(decrypted).toString('utf8')
+}
+
+/** Encrypt a string to the platform's public key (ECIES). Used server-side for ChatGPT tokens. */
+export function encryptForPlatform(plaintext: string): string {
+  if (!_eciesPrivateKey) throw new Error('Platform not initialized — call initPlatform()')
+  const pubKey = _eciesPrivateKey.publicKey
+  const encrypted = eciesEncrypt(pubKey.toHex(), Buffer.from(plaintext, 'utf8'))
+  return Buffer.from(encrypted).toString('hex')
 }
 
 /** The viem account for signing transactions (payouts, etc.) */

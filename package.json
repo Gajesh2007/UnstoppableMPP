@@ -10,6 +10,10 @@
   "peerDependencies": {
     "typescript": "^5"
   },
+  "scripts": {
+    "dev": "bun --hot src/index.ts",
+    "sidecar": "bun run src/sidecar/codex-proxy.ts"
+  },
   "dependencies": {
     "drizzle-orm": "^0.45.1",
     "eciesjs": "^0.4.18",
