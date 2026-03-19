@@ -17,9 +17,6 @@ import { getDb } from '../db/client'
 import { sellers, payouts } from '../db/schema'
 import { config } from '../config'
 
-import { config } from '../config'
-
-
 let walletClient: ReturnType<typeof createWalletClient> | null = null
 let publicClient: ReturnType<typeof createPublicClient> | null = null
 

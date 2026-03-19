@@ -32,22 +32,23 @@ Buyer                          UnstoppableMPP                    OpenAI
   |  POST /v1/chat/completions       |                              |
   |--------------------------------->|                              |
   |                                  |                              |
-  |  402 Payment Required            |                              |
-  |  (MPP challenge: $0.003 USDC)    |                              |
+  |  402 (MPP session challenge)     |                              |
   |<---------------------------------|                              |
   |                                  |                              |
-  |  Payment (on-chain, ~500ms)      |                              |
+  |  Open session (deposit USDC)     |                              |
   |--------------------------------->|                              |
   |                                  |  Forward with seller's key   |
   |                                  |----------------------------->|
   |                                  |                              |
-  |                                  |  Response                    |
+  |                                  |  Response (stream or full)   |
   |                                  |<-----------------------------|
-  |  Response + Payment Receipt      |                              |
+  |  Response + Receipt              |                              |
   |<---------------------------------|                              |
-  |                                  |                              |
+  |                                  |  Charge actual cost (voucher)|
   |                                  |  Credit seller balance       |
 ```
+
+Buyers open a **session** with a deposit (e.g. $1 USDC). Each request charges the **actual cost** via off-chain vouchers -- no upfront estimation, no overpaying. Unused deposit is refunded when the session closes. For streaming, tokens are metered as they arrive.
 
 - **All `/v1/*` endpoints** are supported -- chat, embeddings, images, audio, assistants, everything
 - **Cheapest key first** -- the marketplace always routes through the lowest-priced healthy key
@@ -58,16 +59,23 @@ Buyer                          UnstoppableMPP                    OpenAI
 
 You have unused OpenAI credits? Maybe you bought too many, or your company is winding down. List your key and earn USDC.
 
+Use the web dashboard or the API directly:
+
 ```bash
-# 1. Get the platform's public key
+# 1. Authenticate with your Tempo wallet (sign a nonce)
+NONCE=$(curl -s -X POST https://mpp.autonymlabs.org/marketplace/auth/nonce \
+  -H 'Content-Type: application/json' \
+  -d '{"address": "0xYourWallet"}' | jq -r '.nonce')
+
+# Sign the message with your wallet, then verify to get a session token
+TOKEN=$(curl -s -X POST https://mpp.autonymlabs.org/marketplace/auth/verify \
+  -H 'Content-Type: application/json' \
+  -d '{"address": "0xYourWallet", "signature": "<signed-message>", "nonce": "'$NONCE'"}' \
+  | jq -r '.token')
+
+# 2. Get the platform's public key
 curl https://mpp.autonymlabs.org/marketplace/public-key
 # {"public_key": "038318..."}
-
-# 2. Register as a seller
-curl -X POST https://mpp.autonymlabs.org/marketplace/sellers \
-  -H 'Content-Type: application/json' \
-  -d '{"wallet_address": "0xYourTempoWallet"}'
-# Returns: auth_token (save this!) + public_key
 
 # 3. Encrypt your OpenAI key to the platform's public key (ECIES)
 #    This ensures only the TEE can decrypt it -- not even the operator
@@ -75,7 +83,7 @@ npx eciesjs encrypt <public_key> <your-openai-key>
 
 # 4. Submit the encrypted key with your pricing
 curl -X POST https://mpp.autonymlabs.org/marketplace/keys \
-  -H 'Authorization: Bearer <auth_token>' \
+  -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{
     "encrypted_key": "<hex-encrypted-key>",
@@ -92,11 +100,12 @@ curl -X POST https://mpp.autonymlabs.org/marketplace/keys \
 | Endpoint | Description |
 |---|---|
 | `GET /marketplace/public-key` | Platform's ECIES public key (encrypt your API key to this) |
-| `POST /marketplace/sellers` | Register as a seller |
+| `POST /marketplace/auth/nonce` | Get a nonce to sign for wallet authentication |
+| `POST /marketplace/auth/verify` | Verify signature and get session token |
 | `POST /marketplace/keys` | Submit an encrypted API key |
 | `GET /marketplace/keys` | List your keys + health status |
 | `PATCH /marketplace/keys/:id` | Update pricing or spending limit |
-| `DELETE /marketplace/keys/:id` | Deactivate a key |
+| `DELETE /marketplace/keys/:id` | Delist a key |
 | `GET /marketplace/balance` | Check your earnings |
 | `POST /marketplace/payout` | Instant withdrawal to your Tempo wallet |
 | `GET /marketplace/payouts` | Payout history |
