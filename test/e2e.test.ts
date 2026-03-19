@@ -26,7 +26,7 @@ beforeAll(async () => {
       MPP_SECRET_KEY: 'e2e-test-secret-key',
       PORT: String(PORT),
       DATABASE_PATH: './data/test.db',
-      PLATFORM_FEE_PCT: '5',
+      PLATFORM_FEE_PCT: '1',
     },
     stdout: 'pipe',
     stderr: 'pipe',
@@ -58,7 +58,7 @@ describe('Platform', () => {
     expect(body.status).toBe('running')
     expect(body.platform_address).toMatch(/^0x/)
     expect(body.public_key).toBeTruthy()
-    expect(body.platform_fee_pct).toBe(5)
+    expect(body.platform_fee_pct).toBe(1)
   })
 
   test('returns security headers', async () => {

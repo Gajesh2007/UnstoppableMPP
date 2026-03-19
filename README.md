@@ -22,7 +22,7 @@ tempo request -t -X POST \
   https://your-deployment.com/v1/chat/completions
 ```
 
-The buyer pays in USDC. The seller gets paid instantly. The platform takes 5%.
+The buyer pays in USDC. The seller gets paid instantly. The platform takes 1%.
 
 ## How It Works
 
@@ -169,7 +169,7 @@ openssl rand -hex 32
 MNEMONIC=<your 12-word mnemonic>
 MPP_SECRET_KEY=<your 64-char hex key>
 PORT=3000
-PLATFORM_FEE_PCT=5
+PLATFORM_FEE_PCT=1
 ```
 
 ### 3. Configure TLS

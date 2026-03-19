@@ -129,9 +129,9 @@ describe('splitPayment', () => {
     expect(sellerEarnedUsd).toBeGreaterThan(platformFeeUsd)
   })
 
-  test('platform fee is ~5% of buyer payment', () => {
+  test('platform fee is ~1% of buyer payment', () => {
     const { platformFeeUsd } = splitPayment(100, 0)
-    // 5 / 105 * 100 ≈ 4.76 (platform fee extracted from total)
-    expect(platformFeeUsd).toBeCloseTo(4.76, 1)
+    // 1 / 101 * 100 ≈ 0.99 (platform fee extracted from total)
+    expect(platformFeeUsd).toBeCloseTo(0.99, 1)
   })
 })
