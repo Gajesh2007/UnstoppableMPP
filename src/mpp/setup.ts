@@ -17,6 +17,7 @@ export function initMppx() {
         currency: config.tempoUsdcAddress,
         recipient,
         decimals: 6,
+        sse: true,
       }),
     ],
     secretKey: config.mppSecretKey,

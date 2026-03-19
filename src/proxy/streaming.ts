@@ -2,7 +2,7 @@ import { nanoid } from 'nanoid'
 import { config } from '../config'
 import { getDb } from '../db/client'
 import { transactions, sellers } from '../db/schema'
-import { selectCheapestKey, selectNextKey, recordSpend, type SelectedKey } from './key-selector'
+import { selectNextKey, recordSpend, type SelectedKey } from './key-selector'
 import { splitPayment } from '../pricing/calculator'
 import { getModelPricing } from '../pricing/fetcher'
 import { markKeyFailure, markKeySuccess } from '../health/tracker'
@@ -12,33 +12,32 @@ const MAX_RETRIES = 3
 
 /**
  * Proxy a streaming (SSE) request to OpenAI.
- * Streams chunks back to the buyer in real time.
- * On key failure (401/403/429), falls back to the next cheapest key.
+ * Returns the upstream SSE stream directly — the MPP session layer
+ * handles per-token charging via vouchers.
  */
 export async function proxyStreamingToOpenAI(
   path: string,
   headers: Headers,
   body: Record<string, unknown>,
-  buyerPaidUsd: number
+  initialKey: SelectedKey
 ): Promise<Response> {
   const excludeKeyIds: string[] = []
+  let selectedKey = initialKey
 
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-    let selectedKey: SelectedKey
-    try {
-      selectedKey =
-        excludeKeyIds.length === 0
-          ? await selectCheapestKey()
-          : await selectNextKey(excludeKeyIds)
-    } catch {
-      return errorResponse(503, 'No API keys available')
+    if (attempt > 0) {
+      try {
+        selectedKey = await selectNextKey(excludeKeyIds)
+      } catch {
+        return errorResponse(503, 'No API keys available')
+      }
     }
 
     const upstreamHeaders = new Headers()
     upstreamHeaders.set('Authorization', `Bearer ${selectedKey.decryptedKey}`)
     upstreamHeaders.set('Content-Type', 'application/json')
 
-    // Request stream_options.include_usage so OpenAI sends usage in the final chunk
+    // Request usage in final chunk for accurate billing
     const bodyWithUsage = { ...body, stream_options: { include_usage: true } }
 
     let upstreamResponse: Response
@@ -75,6 +74,7 @@ export async function proxyStreamingToOpenAI(
     let totalOutputTokens = 0
     let totalInputTokens = 0
 
+    // Transform stream: pass through chunks and track usage
     const { readable, writable } = new TransformStream({
       transform(chunk, controller) {
         controller.enqueue(chunk)
@@ -87,32 +87,25 @@ export async function proxyStreamingToOpenAI(
           if (data === '[DONE]') continue
           try {
             const parsed = JSON.parse(data)
-            // OpenAI sends usage in final chunk when stream_options.include_usage is true
             if (parsed.usage) {
               totalInputTokens = parsed.usage.prompt_tokens || 0
               totalOutputTokens = parsed.usage.completion_tokens || 0
             } else if (parsed.choices?.[0]?.delta?.content) {
               totalOutputTokens++
             }
-          } catch {
-            // Not valid JSON, skip
-          }
+          } catch { /* skip */ }
         }
       },
       flush() {
-        // Record transaction async — don't block stream completion
         recordStreamTransaction(
-          selectedKey, model, path, buyerPaidUsd,
-          totalInputTokens, totalOutputTokens
+          selectedKey, model, path, totalInputTokens, totalOutputTokens
         ).catch((err) =>
           console.error('[streaming] Failed to record transaction:', err instanceof Error ? err.message : err)
         )
       },
     })
 
-    upstreamResponse.body.pipeTo(writable).catch(() => {
-      // Stream interrupted — flush will still fire with partial data
-    })
+    upstreamResponse.body.pipeTo(writable).catch(() => { /* stream interrupted */ })
 
     return new Response(readable, {
       status: 200,
@@ -132,12 +125,9 @@ async function recordStreamTransaction(
   selectedKey: SelectedKey,
   model: string,
   path: string,
-  buyerPaidUsd: number,
   inputTokens: number,
   outputTokens: number
 ) {
-  const { sellerEarnedUsd, platformFeeUsd } = splitPayment(buyerPaidUsd, selectedKey.markupPct)
-
   let openaiCostUsd: number | undefined
   if (inputTokens > 0) {
     const pricing = await getModelPricing(model)
@@ -148,7 +138,9 @@ async function recordStreamTransaction(
     }
   }
 
-  await recordSpend(selectedKey.id, openaiCostUsd || buyerPaidUsd)
+  await recordSpend(selectedKey.id, openaiCostUsd || 0)
+
+  const { sellerEarnedUsd, platformFeeUsd } = splitPayment(openaiCostUsd || 0, selectedKey.markupPct)
 
   const db = getDb()
   await db
@@ -164,7 +156,7 @@ async function recordStreamTransaction(
     inputTokens: inputTokens || undefined,
     outputTokens: outputTokens || undefined,
     openaiCostUsd,
-    buyerPaidUsd,
+    buyerPaidUsd: openaiCostUsd || 0,
     sellerEarnedUsd,
     platformFeeUsd,
     endpoint: path,

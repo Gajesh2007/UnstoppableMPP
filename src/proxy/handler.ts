@@ -2,7 +2,7 @@ import { nanoid } from 'nanoid'
 import { config } from '../config'
 import { getDb } from '../db/client'
 import { transactions, sellers } from '../db/schema'
-import { selectCheapestKey, selectNextKey, recordSpend, type SelectedKey } from './key-selector'
+import { selectNextKey, recordSpend, type SelectedKey } from './key-selector'
 import { splitPayment } from '../pricing/calculator'
 import { getModelPricing } from '../pricing/fetcher'
 import { markKeyFailure, markKeySuccess } from '../health/tracker'
@@ -10,10 +10,7 @@ import { sql, eq } from 'drizzle-orm'
 
 const MAX_RETRIES = 3
 
-// Headers safe to forward from buyer to OpenAI
 const FORWARD_HEADERS = ['user-agent', 'accept', 'accept-encoding']
-
-// Headers safe to forward from OpenAI back to buyer
 const PASSTHROUGH_HEADERS = [
   'content-type',
   'content-disposition',
@@ -25,27 +22,25 @@ const PASSTHROUGH_HEADERS = [
 
 /**
  * Proxy a non-streaming request to OpenAI.
- * Selects cheapest healthy key, forwards request, records transaction.
- * On failure (401/403/429), falls back to the next cheapest key.
+ * Uses the pre-selected key, falls back to next cheapest on failure.
  */
 export async function proxyToOpenAI(
   method: string,
   path: string,
   headers: Headers,
   body: Record<string, unknown> | null,
-  buyerPaidUsd: number
+  initialKey: SelectedKey
 ): Promise<Response> {
   const excludeKeyIds: string[] = []
+  let selectedKey = initialKey
 
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-    let selectedKey: SelectedKey
-    try {
-      selectedKey =
-        excludeKeyIds.length === 0
-          ? await selectCheapestKey()
-          : await selectNextKey(excludeKeyIds)
-    } catch {
-      return errorResponse(503, 'No API keys available')
+    if (attempt > 0) {
+      try {
+        selectedKey = await selectNextKey(excludeKeyIds)
+      } catch {
+        return errorResponse(503, 'No API keys available')
+      }
     }
 
     const upstreamHeaders = new Headers()
@@ -65,21 +60,13 @@ export async function proxyToOpenAI(
         body: body ? JSON.stringify(body) : undefined,
       })
     } catch (err) {
-      // Network error talking to OpenAI — try next key
       console.error(`[proxy] Network error with key ${selectedKey.id}:`, err instanceof Error ? err.message : err)
       excludeKeyIds.push(selectedKey.id)
       await markKeyFailure(selectedKey.id)
       continue
     }
 
-    // Key-related failures — try next key
-    if (upstreamResponse.status === 401 || upstreamResponse.status === 403) {
-      excludeKeyIds.push(selectedKey.id)
-      await markKeyFailure(selectedKey.id)
-      continue
-    }
-
-    if (upstreamResponse.status === 429) {
+    if (upstreamResponse.status === 401 || upstreamResponse.status === 403 || upstreamResponse.status === 429) {
       excludeKeyIds.push(selectedKey.id)
       await markKeyFailure(selectedKey.id)
       continue
@@ -87,7 +74,6 @@ export async function proxyToOpenAI(
 
     await markKeySuccess(selectedKey.id)
 
-    // Read response
     const contentType = upstreamResponse.headers.get('Content-Type') || ''
     let responseText: string | null = null
     let responseBody: Record<string, unknown> | null = null
@@ -96,17 +82,14 @@ export async function proxyToOpenAI(
       responseText = await upstreamResponse.text()
       try {
         responseBody = JSON.parse(responseText)
-      } catch {
-        // pass through as-is
-      }
+      } catch { /* pass through */ }
     }
 
-    // Record transaction async — don't block the response
-    recordTransaction(selectedKey, body, responseBody, path, buyerPaidUsd).catch((err) =>
+    // Record transaction async
+    recordTransaction(selectedKey, body, responseBody, path).catch((err) =>
       console.error('[proxy] Failed to record transaction:', err instanceof Error ? err.message : err)
     )
 
-    // Build response with only safe headers
     const responseHeaders = new Headers()
     for (const name of PASSTHROUGH_HEADERS) {
       const val = upstreamResponse.headers.get(name)
@@ -114,17 +97,10 @@ export async function proxyToOpenAI(
     }
 
     if (responseText !== null) {
-      return new Response(responseText, {
-        status: upstreamResponse.status,
-        headers: responseHeaders,
-      })
+      return new Response(responseText, { status: upstreamResponse.status, headers: responseHeaders })
     }
 
-    // Non-JSON response (files, audio, etc.) — stream through
-    return new Response(upstreamResponse.body, {
-      status: upstreamResponse.status,
-      headers: responseHeaders,
-    })
+    return new Response(upstreamResponse.body, { status: upstreamResponse.status, headers: responseHeaders })
   }
 
   return errorResponse(503, 'All available API keys failed')
@@ -134,12 +110,9 @@ async function recordTransaction(
   selectedKey: SelectedKey,
   requestBody: Record<string, unknown> | null,
   responseBody: Record<string, unknown> | null,
-  path: string,
-  buyerPaidUsd: number
+  path: string
 ) {
-  const { sellerEarnedUsd, platformFeeUsd } = splitPayment(buyerPaidUsd, selectedKey.markupPct)
   const model = (requestBody?.model as string) || 'unknown'
-
   const usage = responseBody?.usage as { prompt_tokens?: number; completion_tokens?: number } | undefined
 
   let openaiCostUsd: number | undefined
@@ -152,7 +125,9 @@ async function recordTransaction(
     }
   }
 
-  await recordSpend(selectedKey.id, openaiCostUsd || buyerPaidUsd)
+  await recordSpend(selectedKey.id, openaiCostUsd || 0)
+
+  const { sellerEarnedUsd, platformFeeUsd } = splitPayment(openaiCostUsd || 0, selectedKey.markupPct)
 
   const db = getDb()
   await db
@@ -168,7 +143,7 @@ async function recordTransaction(
     inputTokens: usage?.prompt_tokens,
     outputTokens: usage?.completion_tokens,
     openaiCostUsd,
-    buyerPaidUsd,
+    buyerPaidUsd: openaiCostUsd || 0,
     sellerEarnedUsd,
     platformFeeUsd,
     endpoint: path,
