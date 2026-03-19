@@ -258,5 +258,15 @@ src/
 
 ## Disclaimer
 
-This software is experimental and provided for research purposes only. It is not intended for production use in regulated environments. The authors make no guarantees about availability, correctness, or security. Users are responsible for complying with all applicable terms of service and laws in their jurisdiction. Use at your own risk.
+This software is experimental and provided for research purposes only. It is not intended for production use in regulated environments. The authors make no guarantees about availability, correctness, or security.
+
+**By using this software, you acknowledge that:**
+
+- You are solely responsible for ensuring your use complies with all applicable laws, regulations, and third-party terms of service in your jurisdiction.
+- If you list API keys, session tokens, or authentication credentials, you do so voluntarily and at your own risk. You represent that you have the right to share such credentials and accept full responsibility for any consequences, including account action by the credential issuer.
+- This platform operates as neutral infrastructure and does not encourage or endorse violation of any third-party terms of service. The operators do not act as agents for any user.
+- This software is provided "as is" without warranty of any kind. The operators are not liable for any direct, indirect, incidental, or consequential damages arising from use of this platform.
+- You agree to indemnify and hold harmless the operators, contributors, and affiliates from any claims arising from your use or misuse of this platform.
+
+Use at your own risk.
 

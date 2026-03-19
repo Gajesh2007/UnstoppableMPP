@@ -9,6 +9,8 @@ import { startPricingRefresh } from './pricing/fetcher'
 import { startHealthMonitor } from './health/monitor'
 import { marketplace } from './marketplace/router'
 import { proxy } from './proxy/router'
+import { codex } from './proxy/codex-router'
+import { stats } from './stats/router'
 import { securityHeaders, maxBodySize, requestId } from './middleware/security'
 import { rateLimit } from './middleware/rate-limit'
 import { idempotency } from './middleware/idempotency'
@@ -41,6 +43,8 @@ app.use('*', idempotency)
 app.use('/marketplace/*', rateLimit(60_000, 60))   // 60 req/min for seller management
 app.use('/v1/*', rateLimit(60_000, 300))            // 300 req/min for proxy
 app.use('/v1/*', maxBodySize(4 * 1024 * 1024))      // 4MB max body for proxy
+app.use('/codex/*', rateLimit(60_000, 300))          // 300 req/min for codex
+app.use('/codex/*', maxBodySize(4 * 1024 * 1024))    // 4MB max body for codex
 
 // Health check
 app.get('/', (c) =>
@@ -56,6 +60,12 @@ app.get('/', (c) =>
 
 // Marketplace routes (seller management)
 app.route('/marketplace', marketplace)
+
+// Public stats
+app.route('/stats', stats)
+
+// Codex routes (OpenAI Responses API, MPP-gated)
+app.route('/codex', codex)
 
 // Proxy routes (OpenAI-compatible, MPP-gated)
 app.route('/', proxy)

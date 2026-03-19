@@ -58,6 +58,25 @@ export function getDb() {
     `)
 
     sqlite.run(`
+      CREATE TABLE IF NOT EXISTS codex_tokens (
+        id TEXT PRIMARY KEY,
+        seller_id TEXT NOT NULL REFERENCES sellers(id),
+        encrypted_access_token TEXT NOT NULL,
+        encrypted_refresh_token TEXT NOT NULL,
+        account_id TEXT NOT NULL,
+        plan_type TEXT,
+        email TEXT,
+        markup_pct REAL NOT NULL DEFAULT 0,
+        is_active INTEGER NOT NULL DEFAULT 1,
+        is_healthy INTEGER NOT NULL DEFAULT 1,
+        failure_count INTEGER NOT NULL DEFAULT 0,
+        last_refreshed_at INTEGER NOT NULL,
+        last_used_at INTEGER,
+        created_at INTEGER NOT NULL
+      )
+    `)
+
+    sqlite.run(`
       CREATE TABLE IF NOT EXISTS model_pricing (
         id TEXT PRIMARY KEY,
         model_id TEXT NOT NULL UNIQUE,
@@ -72,7 +91,7 @@ export function getDb() {
       CREATE TABLE IF NOT EXISTS transactions (
         id TEXT PRIMARY KEY,
         buyer_address TEXT,
-        api_key_id TEXT NOT NULL REFERENCES api_keys(id),
+        api_key_id TEXT NOT NULL,
         seller_id TEXT NOT NULL REFERENCES sellers(id),
         model TEXT NOT NULL,
         input_tokens INTEGER,
