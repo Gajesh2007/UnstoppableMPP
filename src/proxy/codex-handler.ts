@@ -15,10 +15,18 @@ import { sql, eq } from 'drizzle-orm'
 const MAX_RETRIES = 3
 const CHATGPT_CODEX_BASE = 'https://chatgpt.com/backend-api/codex'
 
+/** Full usage breakdown from response.completed */
+interface CodexUsage {
+  inputTokens: number
+  cachedInputTokens: number
+  outputTokens: number
+  reasoningTokens: number
+}
+
 /**
  * Proxy a Codex Responses API request to ChatGPT's backend.
  * Uses seller's ChatGPT session tokens instead of OpenAI API keys.
- * Codex always streams — returns SSE with response.* events.
+ * ChatGPT Codex always streams — returns SSE with response.* events.
  */
 export async function proxyCodexToChatGPT(
   headers: Headers,
@@ -49,8 +57,8 @@ export async function proxyCodexToChatGPT(
       if (val) upstreamHeaders.set(name, val)
     }
 
-    // ChatGPT Codex auth requires store: false
-    const upstreamBody = { ...body, store: false }
+    // ChatGPT Codex requires store: false and stream: true
+    const upstreamBody = { ...body, store: false, stream: true }
 
     let upstreamResponse: Response
     try {
@@ -71,8 +79,7 @@ export async function proxyCodexToChatGPT(
       console.log(`[codex] Token ${token.id} got 401, attempting refresh...`)
       const refreshed = await refreshCodexToken(token.id)
       if (refreshed) {
-        // Retry with refreshed token — don't count as a failure
-        attempt-- // will increment back to same attempt number
+        attempt--
         continue
       }
     }
@@ -90,37 +97,9 @@ export async function proxyCodexToChatGPT(
     await markCodexTokenSuccess(token.id)
 
     const model = (body.model as string) || 'unknown'
-    const isStreaming = body.stream !== false
+    const usage: CodexUsage = { inputTokens: 0, cachedInputTokens: 0, outputTokens: 0, reasoningTokens: 0 }
 
-    if (!isStreaming) {
-      // Non-streaming: parse JSON response, extract usage, return as-is
-      const responseBody = await upstreamResponse.text()
-      let totalInputTokens = 0
-      let totalOutputTokens = 0
-      try {
-        const parsed = JSON.parse(responseBody)
-        if (parsed.usage) {
-          totalInputTokens = parsed.usage.input_tokens || 0
-          totalOutputTokens = parsed.usage.output_tokens || 0
-        }
-      } catch { /* skip */ }
-
-      recordCodexTransaction(token, model, totalInputTokens, totalOutputTokens)
-        .catch((err) => console.error('[codex] Failed to record transaction:', err instanceof Error ? err.message : err))
-
-      return new Response(responseBody, {
-        status: upstreamResponse.status,
-        headers: {
-          'Content-Type': 'application/json',
-          'Cache-Control': 'no-cache, no-store',
-        },
-      })
-    }
-
-    // Streaming: pass through SSE events, extract usage from response.completed
-    let totalInputTokens = 0
-    let totalOutputTokens = 0
-
+    // Pass through SSE events, extract full usage from response.completed
     const { readable, writable } = new TransformStream({
       transform(chunk, controller) {
         controller.enqueue(chunk)
@@ -134,18 +113,18 @@ export async function proxyCodexToChatGPT(
           try {
             const parsed = JSON.parse(data)
             if (parsed.type === 'response.completed' && parsed.response?.usage) {
-              totalInputTokens = parsed.response.usage.input_tokens || 0
-              totalOutputTokens = parsed.response.usage.output_tokens || 0
+              const u = parsed.response.usage
+              usage.inputTokens = u.input_tokens || 0
+              usage.cachedInputTokens = u.input_tokens_details?.cached_tokens || 0
+              usage.outputTokens = u.output_tokens || 0
+              usage.reasoningTokens = u.output_tokens_details?.reasoning_tokens || 0
             }
           } catch { /* skip malformed lines */ }
         }
       },
       flush() {
-        recordCodexTransaction(
-          token, model, totalInputTokens, totalOutputTokens
-        ).catch((err) =>
-          console.error('[codex] Failed to record transaction:', err instanceof Error ? err.message : err)
-        )
+        recordCodexTransaction(token, model, usage)
+          .catch((err) => console.error('[codex] Failed to record transaction:', err instanceof Error ? err.message : err))
       },
     })
 
@@ -165,25 +144,38 @@ export async function proxyCodexToChatGPT(
   return errorResponse(503, 'All available Codex tokens failed')
 }
 
+/**
+ * Calculate cost exactly like OpenAI does:
+ *   cost = (non-cached input × input price)
+ *        + (cached input × cached price)
+ *        + (output × output price)
+ *
+ * Cached input is 10x cheaper than regular input.
+ * Reasoning tokens are charged at output rate.
+ */
 async function recordCodexTransaction(
   token: SelectedCodexToken,
   model: string,
-  inputTokens: number,
-  outputTokens: number
+  usage: CodexUsage
 ) {
-  // ChatGPT subscriptions are flat-rate, so there's no real "OpenAI cost"
-  // per token. We use equivalent API pricing as a basis for billing.
-  // Codex models aren't on OpenRouter, so fall back to gpt-4o-equivalent pricing.
-  let equivalentCostUsd: number | undefined
-  if (inputTokens > 0 || outputTokens > 0) {
+  let equivalentCostUsd = 0
+
+  if (usage.inputTokens > 0 || usage.outputTokens > 0) {
     let pricing = await getModelPricing(model)
     if (!pricing) pricing = await getModelPricing('gpt-4o')
-    const inputPrice = pricing?.inputPricePerToken || 0.0000025
-    const outputPrice = pricing?.outputPricePerToken || 0.00001
-    equivalentCostUsd = inputTokens * inputPrice + outputTokens * outputPrice
+
+    const inputPrice = pricing?.inputPricePerToken || 0.00000175   // $1.75/1M
+    const cachedPrice = inputPrice / 10                             // 10x cheaper
+    const outputPrice = pricing?.outputPricePerToken || 0.000014   // $14.00/1M
+
+    const nonCachedInput = usage.inputTokens - usage.cachedInputTokens
+    equivalentCostUsd =
+      (nonCachedInput * inputPrice) +
+      (usage.cachedInputTokens * cachedPrice) +
+      (usage.outputTokens * outputPrice)
   }
 
-  const { sellerEarnedUsd, platformFeeUsd } = splitPayment(equivalentCostUsd || 0, token.markupPct)
+  const { sellerEarnedUsd, platformFeeUsd } = splitPayment(equivalentCostUsd, token.markupPct)
 
   const db = getDb()
   await db
@@ -193,13 +185,13 @@ async function recordCodexTransaction(
 
   await db.insert(transactions).values({
     id: nanoid(),
-    apiKeyId: token.id, // reusing apiKeyId field for codex token ID
+    apiKeyId: token.id,
     sellerId: token.sellerId,
     model,
-    inputTokens: inputTokens || undefined,
-    outputTokens: outputTokens || undefined,
+    inputTokens: usage.inputTokens,
+    outputTokens: usage.outputTokens,
     openaiCostUsd: equivalentCostUsd,
-    buyerPaidUsd: equivalentCostUsd || 0,
+    buyerPaidUsd: equivalentCostUsd,
     sellerEarnedUsd,
     platformFeeUsd,
     endpoint: '/codex/responses',

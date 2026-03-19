@@ -12,6 +12,7 @@ const codex = new Hono()
  *
  * Proxies to chatgpt.com/backend-api/codex/responses using seller's
  * ChatGPT session tokens. Buyers pay via MPP sessions per-token.
+ * ChatGPT Codex always streams.
  */
 codex.post('/responses', async (c) => {
   let body: Record<string, unknown>
@@ -28,12 +29,15 @@ codex.post('/responses', async (c) => {
     return c.json({ error: { message: 'No Codex tokens available', type: 'server_error' } }, 503)
   }
 
-  const model = (body.model as string) || 'o4-mini'
+  const model = (body.model as string) || 'gpt-5.3-codex'
   const pricing = await getModelPricing(model)
   const markupMultiplier = 1 + (selectedToken.markupPct / 100)
   const feeMultiplier = 1 + (config.platformFeePct / 100)
 
-  const outputCostPerToken = (pricing?.outputPricePerToken || 0.00001) * markupMultiplier * feeMultiplier
+  // Per-token cost — use output price since that's what flows through the SSE stream.
+  // Input + cached input cost is calculated post-response from the usage breakdown
+  // and recorded in the transaction.
+  const outputCostPerToken = (pricing?.outputPricePerToken || 0.000014) * markupMultiplier * feeMultiplier
   const tickCost = outputCostPerToken.toFixed(6)
   const mppx = getMppx()
 
