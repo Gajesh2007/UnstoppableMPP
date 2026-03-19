@@ -1,54 +1,67 @@
 import { Hono } from 'hono'
-import { sellerAuth, type AuthEnv } from './auth'
+import { walletAuth, generateNonce, verifySignedNonce, createSession, type AuthEnv } from './auth'
 import { getPlatformPublicKey } from '../crypto/platform'
 import {
-  registerSeller,
   addApiKey,
   listKeys,
   updateKey,
-  deactivateKey,
+  delistKey,
   getSellerBalance,
+  getSellerId,
 } from './seller.service'
 import { executePayout, getPayoutHistory } from '../mpp/payout'
 
 const marketplace = new Hono<AuthEnv>()
 
-// Public: get the platform's public key (sellers encrypt their API keys to this)
+// --- Public routes ---
+
+// Platform public key (sellers encrypt API keys to this)
 marketplace.get('/public-key', (c) => {
   return c.json({ public_key: getPlatformPublicKey() })
 })
 
-// Public: register as a seller
-marketplace.post('/sellers', async (c) => {
-  const body = await c.req.json<{ wallet_address: string }>()
+// Get a nonce to sign for authentication
+marketplace.post('/auth/nonce', async (c) => {
+  const { address } = await c.req.json<{ address: string }>()
+  if (!address) return c.json({ error: 'address is required' }, 400)
 
-  if (!body.wallet_address) {
-    return c.json({ error: 'wallet_address is required' }, 400)
-  }
-
-  const result = await registerSeller(body.wallet_address)
-
-  return c.json(
-    {
-      id: result.id,
-      auth_token: result.authToken,
-      public_key: getPlatformPublicKey(),
-      message: 'Store this auth_token securely. It will not be shown again. Use the public_key to ECIES-encrypt your API keys before submitting them.',
-    },
-    201
-  )
+  const nonce = generateNonce(address)
+  const message = `Sign in to UnstoppableMPP\n\nNonce: ${nonce}`
+  return c.json({ nonce, message })
 })
 
-// All routes below require seller auth
-marketplace.use('/keys', sellerAuth)
-marketplace.use('/keys/*', sellerAuth)
-marketplace.use('/balance', sellerAuth)
-marketplace.use('/payout', sellerAuth)
-marketplace.use('/payouts', sellerAuth)
+// Verify signature and issue session token
+marketplace.post('/auth/verify', async (c) => {
+  const { address, signature, nonce } = await c.req.json<{
+    address: string
+    signature: string
+    nonce: string
+  }>()
 
-// Add an API key (must be ECIES-encrypted to the platform's public key)
+  if (!address || !signature || !nonce) {
+    return c.json({ error: 'address, signature, and nonce are required' }, 400)
+  }
+
+  const valid = await verifySignedNonce(address, signature, nonce)
+  if (!valid) {
+    return c.json({ error: 'Invalid signature or expired nonce' }, 401)
+  }
+
+  const token = createSession(address)
+  return c.json({ token, address: address.toLowerCase() })
+})
+
+// --- Authenticated routes ---
+
+marketplace.use('/keys', walletAuth)
+marketplace.use('/keys/*', walletAuth)
+marketplace.use('/balance', walletAuth)
+marketplace.use('/payout', walletAuth)
+marketplace.use('/payouts', walletAuth)
+
+// Add an API key (ECIES-encrypted to platform public key)
 marketplace.post('/keys', async (c) => {
-  const sellerId = c.get('sellerId')
+  const walletAddress = c.get('walletAddress')
   const body = await c.req.json<{
     encrypted_key: string
     spending_limit_usd?: number | null
@@ -56,12 +69,12 @@ marketplace.post('/keys', async (c) => {
   }>()
 
   if (!body.encrypted_key) {
-    return c.json({ error: 'encrypted_key is required (ECIES-encrypted hex of your OpenAI API key)' }, 400)
+    return c.json({ error: 'encrypted_key is required' }, 400)
   }
 
   try {
     const result = await addApiKey(
-      sellerId,
+      walletAddress,
       body.encrypted_key,
       body.spending_limit_usd ?? null,
       body.markup_pct ?? 0
@@ -75,14 +88,14 @@ marketplace.post('/keys', async (c) => {
 
 // List your keys
 marketplace.get('/keys', async (c) => {
-  const sellerId = c.get('sellerId')
-  const keys = await listKeys(sellerId)
+  const walletAddress = c.get('walletAddress')
+  const keys = await listKeys(walletAddress)
   return c.json({ keys })
 })
 
 // Update a key's pricing/limits
 marketplace.patch('/keys/:id', async (c) => {
-  const sellerId = c.get('sellerId')
+  const walletAddress = c.get('walletAddress')
   const keyId = c.req.param('id')
   const body = await c.req.json<{
     spending_limit_usd?: number | null
@@ -93,28 +106,39 @@ marketplace.patch('/keys/:id', async (c) => {
   if (body.spending_limit_usd !== undefined) updates.spendingLimitUsd = body.spending_limit_usd
   if (body.markup_pct !== undefined) updates.markupPct = body.markup_pct
 
-  const result = await updateKey(sellerId, keyId, updates)
-  return c.json(result)
+  try {
+    const result = await updateKey(walletAddress, keyId, updates)
+    return c.json(result)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Key not found'
+    return c.json({ error: message }, 404)
+  }
 })
 
-// Deactivate a key
+// Delist a key
 marketplace.delete('/keys/:id', async (c) => {
-  const sellerId = c.get('sellerId')
+  const walletAddress = c.get('walletAddress')
   const keyId = c.req.param('id')
-  await deactivateKey(sellerId, keyId)
-  return c.json({ message: 'Key deactivated' })
+  try {
+    await delistKey(walletAddress, keyId)
+    return c.json({ message: 'Key delisted' })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Key not found'
+    return c.json({ error: message }, 404)
+  }
 })
 
 // Check balance
 marketplace.get('/balance', async (c) => {
-  const sellerId = c.get('sellerId')
-  const balance = await getSellerBalance(sellerId)
+  const walletAddress = c.get('walletAddress')
+  const balance = await getSellerBalance(walletAddress)
   return c.json(balance)
 })
 
-// Execute instant payout via Tempo TIP-20 transfer
+// Instant payout via Tempo
 marketplace.post('/payout', async (c) => {
-  const sellerId = c.get('sellerId')
+  const walletAddress = c.get('walletAddress')
+  const sellerId = await getSellerId(walletAddress)
 
   try {
     const result = await executePayout(sellerId)
@@ -131,9 +155,10 @@ marketplace.post('/payout', async (c) => {
   }
 })
 
-// Get payout history
+// Payout history
 marketplace.get('/payouts', async (c) => {
-  const sellerId = c.get('sellerId')
+  const walletAddress = c.get('walletAddress')
+  const sellerId = await getSellerId(walletAddress)
   const history = await getPayoutHistory(sellerId)
   return c.json({ payouts: history })
 })

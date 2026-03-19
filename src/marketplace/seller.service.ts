@@ -1,41 +1,51 @@
 import { eq, and } from 'drizzle-orm'
 import { nanoid } from 'nanoid'
-import { randomBytes } from 'node:crypto'
 import { getDb } from '../db/client'
 import { sellers, apiKeys } from '../db/schema'
-import { hashToken } from './auth'
 import { decryptApiKey } from '../crypto/platform'
-import { SellerNotFoundError } from '../utils/errors'
 
-export async function registerSeller(walletAddress: string) {
+/**
+ * Get or create a seller by wallet address.
+ * Called on first sign-in — if the seller doesn't exist, we create them.
+ */
+export async function getOrCreateSeller(walletAddress: string) {
   const db = getDb()
-  const id = nanoid()
-  const authToken = randomBytes(32).toString('hex')
-  const authTokenHash = hashToken(authToken)
-  const now = new Date()
+  const addr = walletAddress.toLowerCase()
 
-  await db.insert(sellers).values({
-    id,
-    walletAddress,
-    authTokenHash,
-    balance: 0,
-    createdAt: now,
-    updatedAt: now,
+  let seller = await db.query.sellers.findFirst({
+    where: eq(sellers.walletAddress, addr),
   })
 
-  return { id, authToken }
+  if (!seller) {
+    const id = nanoid()
+    const now = new Date()
+    await db.insert(sellers).values({
+      id,
+      walletAddress: addr,
+      authTokenHash: '', // No longer used — auth via wallet signature
+      balance: 0,
+      createdAt: now,
+      updatedAt: now,
+    })
+    seller = await db.query.sellers.findFirst({
+      where: eq(sellers.id, id),
+    })
+  }
+
+  return seller!
 }
 
 /**
  * Add an API key. The key must already be ECIES-encrypted (hex) to the platform's public key.
- * We verify it can be decrypted and looks like an OpenAI key before storing.
  */
 export async function addApiKey(
-  sellerId: string,
+  walletAddress: string,
   encryptedKeyHex: string,
   spendingLimitUsd: number | null,
   markupPct: number
 ) {
+  const seller = await getOrCreateSeller(walletAddress)
+
   // Verify we can decrypt it and it looks like an OpenAI key
   const plainKey = decryptApiKey(encryptedKeyHex)
   if (!plainKey.startsWith('sk-')) {
@@ -47,7 +57,7 @@ export async function addApiKey(
 
   await db.insert(apiKeys).values({
     id,
-    sellerId,
+    sellerId: seller.id,
     encryptedKey: encryptedKeyHex,
     spendingLimitUsd,
     markupPct,
@@ -61,10 +71,11 @@ export async function addApiKey(
   return { id }
 }
 
-export async function listKeys(sellerId: string) {
+export async function listKeys(walletAddress: string) {
+  const seller = await getOrCreateSeller(walletAddress)
   const db = getDb()
   return db.query.apiKeys.findMany({
-    where: eq(apiKeys.sellerId, sellerId),
+    where: eq(apiKeys.sellerId, seller.id),
     columns: {
       id: true,
       spendingLimitUsd: true,
@@ -81,40 +92,50 @@ export async function listKeys(sellerId: string) {
 }
 
 export async function updateKey(
-  sellerId: string,
+  walletAddress: string,
   keyId: string,
   updates: { spendingLimitUsd?: number | null; markupPct?: number }
 ) {
+  const seller = await getOrCreateSeller(walletAddress)
   const db = getDb()
   const key = await db.query.apiKeys.findFirst({
-    where: and(eq(apiKeys.id, keyId), eq(apiKeys.sellerId, sellerId)),
+    where: and(eq(apiKeys.id, keyId), eq(apiKeys.sellerId, seller.id)),
   })
 
-  if (!key) throw new SellerNotFoundError()
+  if (!key) throw new Error('Key not found')
 
   await db
     .update(apiKeys)
     .set(updates)
-    .where(and(eq(apiKeys.id, keyId), eq(apiKeys.sellerId, sellerId)))
+    .where(and(eq(apiKeys.id, keyId), eq(apiKeys.sellerId, seller.id)))
 
   return { id: keyId, ...updates }
 }
 
-export async function deactivateKey(sellerId: string, keyId: string) {
+/**
+ * Delist a key — deactivate it permanently.
+ */
+export async function delistKey(walletAddress: string, keyId: string) {
+  const seller = await getOrCreateSeller(walletAddress)
   const db = getDb()
-  return db
-    .update(apiKeys)
-    .set({ isActive: false })
-    .where(and(eq(apiKeys.id, keyId), eq(apiKeys.sellerId, sellerId)))
-}
-
-export async function getSellerBalance(sellerId: string) {
-  const db = getDb()
-  const seller = await db.query.sellers.findFirst({
-    where: eq(sellers.id, sellerId),
-    columns: { balance: true, walletAddress: true },
+  const key = await db.query.apiKeys.findFirst({
+    where: and(eq(apiKeys.id, keyId), eq(apiKeys.sellerId, seller.id)),
   })
 
-  if (!seller) throw new SellerNotFoundError()
-  return seller
+  if (!key) throw new Error('Key not found')
+
+  await db
+    .update(apiKeys)
+    .set({ isActive: false })
+    .where(and(eq(apiKeys.id, keyId), eq(apiKeys.sellerId, seller.id)))
+}
+
+export async function getSellerBalance(walletAddress: string) {
+  const seller = await getOrCreateSeller(walletAddress)
+  return { balance: seller.balance, walletAddress: seller.walletAddress }
+}
+
+export async function getSellerId(walletAddress: string): Promise<string> {
+  const seller = await getOrCreateSeller(walletAddress)
+  return seller.id
 }
