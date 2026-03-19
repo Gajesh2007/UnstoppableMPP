@@ -90,10 +90,37 @@ export async function proxyCodexToChatGPT(
     await markCodexTokenSuccess(token.id)
 
     const model = (body.model as string) || 'unknown'
+    const isStreaming = body.stream !== false
+
+    if (!isStreaming) {
+      // Non-streaming: parse JSON response, extract usage, return as-is
+      const responseBody = await upstreamResponse.text()
+      let totalInputTokens = 0
+      let totalOutputTokens = 0
+      try {
+        const parsed = JSON.parse(responseBody)
+        if (parsed.usage) {
+          totalInputTokens = parsed.usage.input_tokens || 0
+          totalOutputTokens = parsed.usage.output_tokens || 0
+        }
+      } catch { /* skip */ }
+
+      recordCodexTransaction(token, model, totalInputTokens, totalOutputTokens)
+        .catch((err) => console.error('[codex] Failed to record transaction:', err instanceof Error ? err.message : err))
+
+      return new Response(responseBody, {
+        status: upstreamResponse.status,
+        headers: {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache, no-store',
+        },
+      })
+    }
+
+    // Streaming: pass through SSE events, extract usage from response.completed
     let totalInputTokens = 0
     let totalOutputTokens = 0
 
-    // Transform stream: pass through SSE events, extract usage from response.completed
     const { readable, writable } = new TransformStream({
       transform(chunk, controller) {
         controller.enqueue(chunk)
