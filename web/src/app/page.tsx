@@ -5,11 +5,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ConnectWallet } from '@/components/connect-wallet'
 import { SellerDashboard } from '@/components/seller-dashboard'
 import { BuyerGuide } from '@/components/buyer-guide'
+import { DisclaimerModal } from '@/components/disclaimer-modal'
 
 export default function Home() {
   const [authedAddress, setAuthedAddress] = useState<string | null>(null)
 
   return (
+    <DisclaimerModal>
     <main className="flex-1">
       <div className="mx-auto max-w-3xl px-4 py-12">
         <div className="mb-10 space-y-2">
@@ -57,5 +59,6 @@ export default function Home() {
         </div>
       </div>
     </main>
+    </DisclaimerModal>
   )
 }
