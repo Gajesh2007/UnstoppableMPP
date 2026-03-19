@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ConnectWallet } from '@/components/connect-wallet'
 import { SellerDashboard } from '@/components/seller-dashboard'
@@ -19,9 +20,17 @@ export default function Home() {
           <p className="text-muted-foreground">
             Unstoppable API Marketplace for Sovereign Agents
           </p>
-          <p className="text-sm text-muted-foreground">
-            If an agent has money to pay, there should always be a provider willing to service it.
-          </p>
+          <div className="flex items-center gap-3 text-sm">
+            <p className="text-muted-foreground">
+              If an agent has money to pay, there should always be a provider willing to service it.
+            </p>
+            <Link
+              href="/explore"
+              className="shrink-0 text-xs text-muted-foreground hover:text-foreground transition-colors border border-border rounded-md px-2.5 py-1"
+            >
+              Explore &rarr;
+            </Link>
+          </div>
         </div>
 
         <Tabs defaultValue="buyer" className="space-y-6">

@@ -10,6 +10,7 @@ import { startHealthMonitor } from './health/monitor'
 import { marketplace } from './marketplace/router'
 import { proxy } from './proxy/router'
 import { codex } from './proxy/codex-router'
+import { stats } from './stats/router'
 import { securityHeaders, maxBodySize, requestId } from './middleware/security'
 import { rateLimit } from './middleware/rate-limit'
 import { idempotency } from './middleware/idempotency'
@@ -59,6 +60,9 @@ app.get('/', (c) =>
 
 // Marketplace routes (seller management)
 app.route('/marketplace', marketplace)
+
+// Public stats
+app.route('/stats', stats)
 
 // Codex routes (OpenAI Responses API, MPP-gated)
 app.route('/codex', codex)
