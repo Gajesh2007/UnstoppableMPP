@@ -1,6 +1,10 @@
 import { createMiddleware } from 'hono/factory'
-import { verifyMessage } from 'viem'
+import { createPublicClient, http } from 'viem'
+import { tempo } from 'viem/chains'
 import { nanoid } from 'nanoid'
+
+// Tempo-aware client — handles P256 passkey signatures, not just secp256k1
+const tempoClient = createPublicClient({ chain: tempo, transport: http() })
 
 export type AuthEnv = {
   Variables: {
@@ -51,7 +55,12 @@ export async function verifySignedNonce(
   const message = `Sign in to UnstoppableMPP\n\nNonce: ${nonce}`
 
   try {
-    const valid = await verifyMessage({ address: address as `0x${string}`, message, signature: signature as `0x${string}` })
+    // Use Tempo public client — supports both secp256k1 and P256 passkey signatures
+    const valid = await tempoClient.verifyMessage({
+      address: address as `0x${string}`,
+      message,
+      signature: signature as `0x${string}`,
+    })
     if (valid) {
       nonceStore.delete(key) // Consume nonce
     }
