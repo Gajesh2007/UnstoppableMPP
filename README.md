@@ -133,7 +133,7 @@ Any MPP-compatible client works. The server returns a standard `402 Payment Requ
 
 **API keys are encrypted end-to-end.** Sellers encrypt their OpenAI keys using ECIES to the platform's secp256k1 public key. The private key exists only inside the TEE (Trusted Execution Environment). Not even the operator can extract it.
 
-**Deployed on [EigenLayer eCloud](https://docs.eigenlayer.xyz/eigenlayer/ecloud)** -- a TEE compute platform with hardware attestation. The mnemonic (which derives both the wallet and the encryption keypair) never leaves the enclave.
+**Deployed on [EigenCloud](https://docs.eigencloud.xyz)** -- a TEE compute platform with hardware attestation. The mnemonic (which derives both the wallet and the encryption keypair) never leaves the enclave.
 
 **MPP best practices enforced:**
 - TLS 1.2+ required (Caddy terminates TLS)
@@ -143,11 +143,11 @@ Any MPP-compatible client works. The server returns a standard `402 Payment Requ
 - Idempotency-Key support for safe retries
 - Challenge IDs are HMAC-bound (not guessable)
 
-## Deploy on eCloud
+## Deploy on EigenCloud
 
 ### Prerequisites
 
-- [eCloud CLI](https://docs.eigenlayer.xyz/eigenlayer/ecloud) installed and authenticated
+- [EigenCloud CLI](https://docs.eigencloud.xyz) installed and authenticated
 - A funded Tempo wallet (for seller payouts)
 - A domain name
 
