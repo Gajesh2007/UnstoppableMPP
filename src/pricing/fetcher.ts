@@ -39,7 +39,7 @@ export async function fetchAndCachePricing(): Promise<number> {
   let count = 0
 
   for (const model of openaiModels) {
-    // Normalize model ID: "openai/gpt-4o" → "gpt-4o"
+    // Normalize model ID: "openai/gpt-5.4" → "gpt-5.4"
     const modelId = model.id.replace('openai/', '')
     const inputPrice = parseFloat(model.pricing.prompt) || 0
     const outputPrice = parseFloat(model.pricing.completion) || 0

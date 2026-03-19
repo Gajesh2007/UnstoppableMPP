@@ -23,7 +23,7 @@ export async function calculatePrice(
   body: Record<string, unknown>,
   sellerMarkupPct: number
 ): Promise<PriceEstimate> {
-  const model = (body.model as string) || 'gpt-4o'
+  const model = (body.model as string) || 'gpt-5.4'
   const pricing = await getModelPricing(model)
 
   if (!pricing) {

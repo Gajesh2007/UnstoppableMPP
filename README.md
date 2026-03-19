@@ -14,11 +14,11 @@ No accounts. No credit cards. No middlemen. Just swap the URL and go.
 # Before (OpenAI direct)
 curl https://api.openai.com/v1/chat/completions \
   -H "Authorization: Bearer sk-..." \
-  -d '{"model": "gpt-4o", "messages": [{"role": "user", "content": "hello"}]}'
+  -d '{"model": "gpt-5.4", "messages": [{"role": "user", "content": "hello"}]}'
 
 # After (UnstoppableMPP -- pay with Tempo wallet)
 tempo request -t -X POST \
-  --json '{"model": "gpt-4o", "messages": [{"role": "user", "content": "hello"}]}' \
+  --json '{"model": "gpt-5.4", "messages": [{"role": "user", "content": "hello"}]}' \
   https://mpp.autonymlabs.org/v1/chat/completions
 ```
 
@@ -117,12 +117,12 @@ Swap your base URL. That's it.
 ```bash
 # Using tempo CLI (handles MPP payment automatically)
 tempo request -t -X POST \
-  --json '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"hello"}]}' \
+  --json '{"model":"gpt-5.4-mini","messages":[{"role":"user","content":"hello"}]}' \
   https://mpp.autonymlabs.org/v1/chat/completions
 
 # Using mppx CLI
 npx mppx https://mpp.autonymlabs.org/v1/chat/completions \
-  -X POST --json '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"hello"}]}'
+  -X POST --json '{"model":"gpt-5.4-mini","messages":[{"role":"user","content":"hello"}]}'
 ```
 
 Any MPP-compatible client works. The server returns a standard `402 Payment Required` with a `WWW-Authenticate: Payment` header -- the client handles the rest.

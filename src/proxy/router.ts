@@ -51,7 +51,7 @@ proxy.all('/v1/*', async (c) => {
   }
 
   // Calculate per-token cost for this model + seller markup
-  const model = (body?.model as string) || 'gpt-4o'
+  const model = (body?.model as string) || 'gpt-5.4'
   const pricing = await getModelPricing(model)
   const markupMultiplier = 1 + (selectedKey.markupPct / 100)
   const feeMultiplier = 1 + (config.platformFeePct / 100)

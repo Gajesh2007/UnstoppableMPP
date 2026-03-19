@@ -17,22 +17,22 @@ describe('Pricing Fetcher', () => {
     expect(all.length).toBeGreaterThan(0)
   })
 
-  test('has pricing for gpt-4o', async () => {
-    const pricing = await getModelPricing('gpt-4o')
+  test('has pricing for gpt-5.4', async () => {
+    const pricing = await getModelPricing('gpt-5.4')
     expect(pricing).toBeTruthy()
     expect(pricing!.inputPricePerToken).toBeGreaterThan(0)
     expect(pricing!.outputPricePerToken).toBeGreaterThan(0)
   })
 
-  test('has pricing for gpt-4o-mini', async () => {
-    const pricing = await getModelPricing('gpt-4o-mini')
+  test('has pricing for gpt-5.4-mini', async () => {
+    const pricing = await getModelPricing('gpt-5.4-mini')
     expect(pricing).toBeTruthy()
     expect(pricing!.inputPricePerToken).toBeGreaterThan(0)
   })
 
-  test('gpt-4o-mini is cheaper than gpt-4o', async () => {
-    const mini = await getModelPricing('gpt-4o-mini')
-    const full = await getModelPricing('gpt-4o')
+  test('gpt-5.4-mini is cheaper than gpt-5.4', async () => {
+    const mini = await getModelPricing('gpt-5.4-mini')
+    const full = await getModelPricing('gpt-5.4')
     expect(mini!.inputPricePerToken).toBeLessThan(full!.inputPricePerToken)
   })
 
@@ -47,7 +47,7 @@ describe('Price Calculator', () => {
     const estimate = await calculatePrice(
       '/v1/chat/completions',
       {
-        model: 'gpt-4o-mini',
+        model: 'gpt-5.4-mini',
         messages: [{ role: 'user', content: 'hello' }],
         max_tokens: 100,
       },
@@ -56,19 +56,19 @@ describe('Price Calculator', () => {
     expect(estimate.buyerPriceUsd).toBeGreaterThan(0)
     expect(estimate.estimatedCostUsd).toBeGreaterThan(0)
     expect(estimate.buyerPriceUsd).toBeGreaterThan(estimate.estimatedCostUsd) // platform fee
-    expect(estimate.model).toBe('gpt-4o-mini')
+    expect(estimate.model).toBe('gpt-5.4-mini')
     expect(estimate.inputTokens).toBeGreaterThan(0)
   })
 
   test('negative markup (discount) lowers buyer price', async () => {
     const noMarkup = await calculatePrice(
       '/v1/chat/completions',
-      { model: 'gpt-4o-mini', messages: [{ role: 'user', content: 'hi' }], max_tokens: 100 },
+      { model: 'gpt-5.4-mini', messages: [{ role: 'user', content: 'hi' }], max_tokens: 100 },
       0
     )
     const discount = await calculatePrice(
       '/v1/chat/completions',
-      { model: 'gpt-4o-mini', messages: [{ role: 'user', content: 'hi' }], max_tokens: 100 },
+      { model: 'gpt-5.4-mini', messages: [{ role: 'user', content: 'hi' }], max_tokens: 100 },
       -20
     )
     expect(discount.buyerPriceUsd).toBeLessThan(noMarkup.buyerPriceUsd)
@@ -77,23 +77,23 @@ describe('Price Calculator', () => {
   test('positive markup increases buyer price', async () => {
     const noMarkup = await calculatePrice(
       '/v1/chat/completions',
-      { model: 'gpt-4o-mini', messages: [{ role: 'user', content: 'hi' }], max_tokens: 100 },
+      { model: 'gpt-5.4-mini', messages: [{ role: 'user', content: 'hi' }], max_tokens: 100 },
       0
     )
     const premium = await calculatePrice(
       '/v1/chat/completions',
-      { model: 'gpt-4o-mini', messages: [{ role: 'user', content: 'hi' }], max_tokens: 100 },
+      { model: 'gpt-5.4-mini', messages: [{ role: 'user', content: 'hi' }], max_tokens: 100 },
       50
     )
     expect(premium.buyerPriceUsd).toBeGreaterThan(noMarkup.buyerPriceUsd)
   })
 
   test('embedding endpoint sets zero output tokens', async () => {
-    // Use gpt-4o-mini as a stand-in since OpenRouter doesn't list embedding model pricing.
+    // Use gpt-5.4-mini as a stand-in since OpenRouter doesn't list embedding model pricing.
     // The calculator still correctly sets maxOutputTokens=0 for /v1/embeddings endpoints.
     const estimate = await calculatePrice(
       '/v1/embeddings',
-      { model: 'gpt-4o-mini', input: 'test input text' },
+      { model: 'gpt-5.4-mini', input: 'test input text' },
       0
     )
     expect(estimate.maxOutputTokens).toBe(0)
@@ -103,12 +103,12 @@ describe('Price Calculator', () => {
   test('longer input = higher price', async () => {
     const short = await calculatePrice(
       '/v1/chat/completions',
-      { model: 'gpt-4o-mini', messages: [{ role: 'user', content: 'hi' }], max_tokens: 100 },
+      { model: 'gpt-5.4-mini', messages: [{ role: 'user', content: 'hi' }], max_tokens: 100 },
       0
     )
     const long = await calculatePrice(
       '/v1/chat/completions',
-      { model: 'gpt-4o-mini', messages: [{ role: 'user', content: 'a'.repeat(10000) }], max_tokens: 100 },
+      { model: 'gpt-5.4-mini', messages: [{ role: 'user', content: 'a'.repeat(10000) }], max_tokens: 100 },
       0
     )
     expect(long.buyerPriceUsd).toBeGreaterThan(short.buyerPriceUsd)

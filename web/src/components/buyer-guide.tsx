@@ -40,7 +40,7 @@ tempo wallet fund`}
             <pre className="bg-muted rounded-md p-3 text-sm overflow-x-auto">
 {`tempo request -t -X POST \\
   --json '{
-    "model": "gpt-4o-mini",
+    "model": "gpt-5.4-mini",
     "messages": [{"role": "user", "content": "hello"}]
   }' \\
   https://mpp.autonymlabs.org/v1/chat/completions`}
@@ -54,7 +54,7 @@ tempo wallet fund`}
             <pre className="bg-muted rounded-md p-3 text-sm overflow-x-auto">
 {`npx mppx https://mpp.autonymlabs.org/v1/chat/completions \\
   -X POST --json '{
-    "model": "gpt-4o-mini",
+    "model": "gpt-5.4-mini",
     "messages": [{"role": "user", "content": "hello"}]
   }'`}
             </pre>
