@@ -33,18 +33,34 @@ codex.post('/responses', async (c) => {
   const markupMultiplier = 1 + (selectedToken.markupPct / 100)
   const feeMultiplier = 1 + (config.platformFeePct / 100)
 
+  const inputCostPerToken = (pricing?.inputPricePerToken || 0.0000025) * markupMultiplier * feeMultiplier
   const outputCostPerToken = (pricing?.outputPricePerToken || 0.00001) * markupMultiplier * feeMultiplier
+  const isStreaming = body.stream !== false
 
-  // Codex always streams — use per-token SSE billing
-  const tickCost = outputCostPerToken.toFixed(6)
   const mppx = getMppx()
+  let result
 
-  const result = await mppx.session({
-    amount: tickCost,
-    unitType: 'token',
-    description: `Codex (ChatGPT): ${model}`,
-    suggestedDeposit: '1',
-  })(c.req.raw)
+  if (isStreaming) {
+    // Per-token SSE billing for streaming
+    const tickCost = outputCostPerToken.toFixed(6)
+    result = await mppx.session({
+      amount: tickCost,
+      unitType: 'token',
+      description: `Codex (ChatGPT): ${model}`,
+      suggestedDeposit: '1',
+    })(c.req.raw)
+  } else {
+    // Per-request billing for non-streaming — estimate cost upfront
+    const estimatedInputTokens = JSON.stringify(body).length / 4
+    const maxOutputTokens = (body.max_output_tokens as number) || 4096
+    const estimatedCost = (estimatedInputTokens * inputCostPerToken) + (maxOutputTokens * outputCostPerToken)
+    result = await mppx.session({
+      amount: estimatedCost.toFixed(6),
+      unitType: 'request',
+      description: `Codex (ChatGPT): ${model}`,
+      suggestedDeposit: '1',
+    })(c.req.raw)
+  }
 
   if (result.status === 402) {
     return result.challenge as Response
