@@ -34,19 +34,19 @@ export function DisclaimerModal({ children }: { children: React.ReactNode }) {
   return (
     <>
       <AlertDialog open={true}>
-        <AlertDialogContent className="max-w-lg">
+        <AlertDialogContent className="max-w-sm max-h-[70vh] flex flex-col">
           <AlertDialogHeader>
-            <AlertDialogTitle className="text-lg">
+            <AlertDialogTitle className="text-base">
               Terms of Use & Disclaimer
             </AlertDialogTitle>
             <AlertDialogDescription>
-              <div className="space-y-3 text-sm text-muted-foreground">
+              <div className="space-y-2 text-xs text-muted-foreground overflow-y-auto max-h-[50vh] pr-2">
                 <p>
                   <strong className="text-foreground">This software is experimental and provided strictly for research purposes.</strong> By
                   proceeding, you acknowledge and agree to the following:
                 </p>
 
-                <ol className="list-decimal pl-5 space-y-2">
+                <ol className="list-decimal pl-4 space-y-1.5">
                   <li>
                     <strong className="text-foreground">Lawful Use Only.</strong> You will use this platform solely for lawful purposes and in
                     full compliance with all applicable laws, regulations, and third-party terms of service,
