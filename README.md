@@ -1,6 +1,12 @@
 # UnstoppableMPP
 
-A decentralized API key marketplace. Sellers list their unused OpenAI API keys with custom pricing. Buyers just swap their base URL and pay per-request with stablecoins on [Tempo](https://tempo.xyz) via the [Machine Payments Protocol](https://mpp.dev).
+**Unstoppable API Marketplace for Sovereign Agents.**
+
+> **Research / Experimental** -- This project is in its experimental phase and is intended for research purposes only. Use at your own risk.
+
+Sovereign agents shouldn't be cut off from the web. If an agent has money to pay, there should always be a provider willing to service it. No bans. No gatekeeping. No single point of failure. That's the thesis.
+
+UnstoppableMPP is a decentralized API key marketplace. Sellers list their unused OpenAI API keys with custom pricing. Buyers -- whether human or autonomous agent -- just swap their base URL and pay per-request with stablecoins on [Tempo](https://tempo.xyz) via the [Machine Payments Protocol](https://mpp.dev).
 
 No accounts. No credit cards. No middlemen. Just swap the URL and go.
 
@@ -246,6 +252,10 @@ src/
 ```
 
 **Stack:** Bun, Hono, mppx, Drizzle/SQLite, Viem, eciesjs
+
+## Disclaimer
+
+This software is experimental and provided for research purposes only. It is not intended for production use in regulated environments. The authors make no guarantees about availability, correctness, or security. Users are responsible for complying with all applicable terms of service and laws in their jurisdiction. Use at your own risk.
 
 ## License
 
