@@ -19,7 +19,7 @@ curl https://api.openai.com/v1/chat/completions \
 # After (UnstoppableMPP -- pay with Tempo wallet)
 tempo request -t -X POST \
   --json '{"model": "gpt-4o", "messages": [{"role": "user", "content": "hello"}]}' \
-  https://your-deployment.com/v1/chat/completions
+  https://mpp.autonymlabs.org/v1/chat/completions
 ```
 
 The buyer pays in USDC. The seller gets paid instantly. The platform takes 1%.
@@ -60,11 +60,11 @@ You have unused OpenAI credits? Maybe you bought too many, or your company is wi
 
 ```bash
 # 1. Get the platform's public key
-curl https://your-deployment.com/marketplace/public-key
+curl https://mpp.autonymlabs.org/marketplace/public-key
 # {"public_key": "038318..."}
 
 # 2. Register as a seller
-curl -X POST https://your-deployment.com/marketplace/sellers \
+curl -X POST https://mpp.autonymlabs.org/marketplace/sellers \
   -H 'Content-Type: application/json' \
   -d '{"wallet_address": "0xYourTempoWallet"}'
 # Returns: auth_token (save this!) + public_key
@@ -74,7 +74,7 @@ curl -X POST https://your-deployment.com/marketplace/sellers \
 npx eciesjs encrypt <public_key> <your-openai-key>
 
 # 4. Submit the encrypted key with your pricing
-curl -X POST https://your-deployment.com/marketplace/keys \
+curl -X POST https://mpp.autonymlabs.org/marketplace/keys \
   -H 'Authorization: Bearer <auth_token>' \
   -H 'Content-Type: application/json' \
   -d '{
@@ -109,10 +109,10 @@ Swap your base URL. That's it.
 # Using tempo CLI (handles MPP payment automatically)
 tempo request -t -X POST \
   --json '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"hello"}]}' \
-  https://your-deployment.com/v1/chat/completions
+  https://mpp.autonymlabs.org/v1/chat/completions
 
 # Using mppx CLI
-npx mppx https://your-deployment.com/v1/chat/completions \
+npx mppx https://mpp.autonymlabs.org/v1/chat/completions \
   -X POST --json '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"hello"}]}'
 ```
 

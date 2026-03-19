@@ -43,7 +43,7 @@ tempo wallet fund`}
     "model": "gpt-4o-mini",
     "messages": [{"role": "user", "content": "hello"}]
   }' \\
-  https://YOUR_DEPLOYMENT/v1/chat/completions`}
+  https://mpp.autonymlabs.org/v1/chat/completions`}
             </pre>
           </div>
 
@@ -52,7 +52,7 @@ tempo wallet fund`}
           <div className="space-y-2">
             <h3 className="font-semibold">4. Or use mppx CLI</h3>
             <pre className="bg-muted rounded-md p-3 text-sm overflow-x-auto">
-{`npx mppx https://YOUR_DEPLOYMENT/v1/chat/completions \\
+{`npx mppx https://mpp.autonymlabs.org/v1/chat/completions \\
   -X POST --json '{
     "model": "gpt-4o-mini",
     "messages": [{"role": "user", "content": "hello"}]
