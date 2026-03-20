@@ -13,6 +13,7 @@ COPY package.json bunfig.toml tsconfig.json ./
 COPY src/ src/
 
 RUN mkdir -p data
+VOLUME /app/data
 
 EXPOSE 3000
 

@@ -106,6 +106,35 @@ export async function proxyToOpenAI(
   return errorResponse(503, 'All available API keys failed')
 }
 
+// DALL-E pricing per image (USD)
+const IMAGE_PRICING: Record<string, Record<string, Record<string, number>>> = {
+  'dall-e-3': {
+    standard: { '1024x1024': 0.04, '1024x1792': 0.08, '1792x1024': 0.08 },
+    hd:       { '1024x1024': 0.08, '1024x1792': 0.12, '1792x1024': 0.12 },
+  },
+  'dall-e-2': {
+    standard: { '1024x1024': 0.02, '512x512': 0.018, '256x256': 0.016 },
+  },
+  'gpt-image-1': {
+    standard: { '1024x1024': 0.04, '1024x1536': 0.08, '1536x1024': 0.08 },
+    hd:       { '1024x1024': 0.08, '1024x1536': 0.16, '1536x1024': 0.16 },
+  },
+}
+
+function getImageCost(
+  model: string,
+  quality: string,
+  size: string,
+  numImages: number
+): number {
+  const modelPricing = IMAGE_PRICING[model]
+  if (!modelPricing) return 0.04 * numImages // fallback
+  const qualityPricing = modelPricing[quality] || modelPricing['standard']
+  if (!qualityPricing) return 0.04 * numImages
+  const perImage = qualityPricing[size] || Object.values(qualityPricing)[0] || 0.04
+  return perImage * numImages
+}
+
 async function recordTransaction(
   selectedKey: SelectedKey,
   requestBody: Record<string, unknown> | null,
@@ -113,15 +142,29 @@ async function recordTransaction(
   path: string
 ) {
   const model = (requestBody?.model as string) || 'unknown'
-  const usage = responseBody?.usage as { prompt_tokens?: number; completion_tokens?: number } | undefined
-
   let openaiCostUsd: number | undefined
-  if (usage?.prompt_tokens !== undefined) {
-    const pricing = await getModelPricing(model)
-    if (pricing) {
-      openaiCostUsd =
-        (usage.prompt_tokens || 0) * pricing.inputPricePerToken +
-        (usage.completion_tokens || 0) * pricing.outputPricePerToken
+  let inputTokens: number | undefined
+  let outputTokens: number | undefined
+
+  if (path.includes('/images/')) {
+    // Image generation — charge per image
+    const quality = (requestBody?.quality as string) || 'standard'
+    const size = (requestBody?.size as string) || '1024x1024'
+    const numImages = (responseBody?.data as unknown[])?.length || (requestBody?.n as number) || 1
+    openaiCostUsd = getImageCost(model, quality, size, numImages)
+  } else {
+    // Token-based endpoints
+    const usage = responseBody?.usage as { prompt_tokens?: number; completion_tokens?: number } | undefined
+    inputTokens = usage?.prompt_tokens
+    outputTokens = usage?.completion_tokens
+
+    if (inputTokens !== undefined) {
+      const pricing = await getModelPricing(model)
+      if (pricing) {
+        openaiCostUsd =
+          (inputTokens || 0) * pricing.inputPricePerToken +
+          (outputTokens || 0) * pricing.outputPricePerToken
+      }
     }
   }
 
@@ -140,8 +183,8 @@ async function recordTransaction(
     apiKeyId: selectedKey.id,
     sellerId: selectedKey.sellerId,
     model,
-    inputTokens: usage?.prompt_tokens,
-    outputTokens: usage?.completion_tokens,
+    inputTokens,
+    outputTokens,
     openaiCostUsd,
     buyerPaidUsd: openaiCostUsd || 0,
     sellerEarnedUsd,
