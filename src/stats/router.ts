@@ -84,7 +84,7 @@ stats.get('/', async (c) => {
       outputTokens: sql<number>`coalesce(sum(${transactions.outputTokens}), 0)`,
       volumeUsd: sql<number>`coalesce(sum(${transactions.buyerPaidUsd}), 0)`,
     }).from(transactions)
-      .where(sql`${transactions.createdAt} > ${Date.now() - 86400000}`),
+      .where(sql`${transactions.createdAt} > ${Math.floor(Date.now() / 1000) - 86400}`),
   ])
 
   const tx = txnStats[0]

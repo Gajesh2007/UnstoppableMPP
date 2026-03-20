@@ -1,17 +1,13 @@
 /**
  * Local sidecar proxy for Codex CLI → UnstoppableMPP.
  *
- * Runs on localhost and handles MPP payment sessions transparently
- * using the Tempo CLI. Codex CLI connects here as if it were a
- * standard OpenAI-compatible endpoint.
- *
- * Prerequisites:
- *   1. Install Tempo CLI: curl -sSL https://tempo.xyz/install | bash
- *   2. Login: tempo wallet login
- *   3. Fund: tempo wallet fund
+ * Runs on localhost and handles MPP payment sessions transparently.
+ * Codex CLI connects here as if it were a standard OpenAI-compatible endpoint.
  *
  * Usage:
- *   bun run sidecar
+ *   PRIVATE_KEY=0x... bun run sidecar
+ *
+ * Or auto-reads from ~/.tempo/wallet/keys.toml if available.
  *
  * Then configure Codex (~/.codex/config.toml):
  *   [model_providers.unstoppable]
@@ -20,28 +16,39 @@
  *   env_key = "UNSTOPPABLE_DUMMY"
  *   wire_api = "responses"
  */
+import { Mppx, session } from 'mppx/client'
+import { privateKeyToAccount } from 'viem/accounts'
+import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
-import { existsSync } from 'node:fs'
+import type { Hex } from 'viem'
 
 const UNSTOPPABLE_URL = process.env.UNSTOPPABLE_URL || 'https://mpp.autonymlabs.org'
 const PORT = Number(process.env.SIDECAR_PORT || 4111)
+const MAX_DEPOSIT = process.env.MAX_DEPOSIT || '5'
 
-// Find tempo binary
-const tempoBin = join(homedir(), '.tempo', 'bin', 'tempo')
-if (!existsSync(tempoBin)) {
-  console.error(
-    'Tempo CLI not found.\n\n' +
-    'Install it:\n' +
-    '  curl -sSL https://tempo.xyz/install | bash\n' +
-    '  tempo wallet login\n' +
-    '  tempo wallet fund\n'
-  )
+function loadPrivateKey(): Hex {
+  if (process.env.PRIVATE_KEY) return process.env.PRIVATE_KEY as Hex
+  try {
+    const toml = readFileSync(join(homedir(), '.tempo', 'wallet', 'keys.toml'), 'utf8')
+    const match = toml.match(/^key\s*=\s*"(0x[0-9a-fA-F]+)"/m)
+    if (match) {
+      console.log('[sidecar] Loaded key from Tempo wallet')
+      return match[1] as Hex
+    }
+  } catch { /* not found */ }
+  console.error('Set PRIVATE_KEY=0x... or run `tempo wallet login`')
   process.exit(1)
 }
 
-console.log(`[sidecar] Tempo CLI: ${tempoBin}`)
+const account = privateKeyToAccount(loadPrivateKey())
+console.log(`[sidecar] Wallet: ${account.address}`)
 console.log(`[sidecar] Server: ${UNSTOPPABLE_URL}`)
+
+const mppx = Mppx.create({
+  methods: [session({ account, maxDeposit: MAX_DEPOSIT, decimals: 6 })],
+  polyfill: false,
+})
 
 Bun.serve({
   port: PORT,
@@ -50,85 +57,95 @@ Bun.serve({
     const path = url.pathname
 
     if (path === '/' && req.method === 'GET') {
-      return Response.json({
-        name: 'UnstoppableMPP Codex Sidecar',
-        status: 'running',
-        server: UNSTOPPABLE_URL,
-      })
+      return Response.json({ name: 'UnstoppableMPP Codex Sidecar', status: 'running', wallet: account.address, server: UNSTOPPABLE_URL })
     }
 
-    // Proxy /v1/responses → remote /codex/responses
-    if (path === '/v1/responses' && req.method === 'POST') {
-      return proxyViaTempoRequest(req, `${UNSTOPPABLE_URL}/codex/responses`)
+    // Codex CLI hits /responses (base_url + /responses)
+    if ((path === '/responses' || path === '/v1/responses') && req.method === 'POST') {
+      return proxyCodex(req)
     }
 
-    // Pass through other /v1/* requests
     if (path.startsWith('/v1/')) {
-      return proxyViaTempoRequest(req, `${UNSTOPPABLE_URL}${path}`)
+      return proxyPassthrough(req, path)
     }
 
-    return Response.json(
-      { error: { message: `Not found: ${req.method} ${path}`, type: 'invalid_request_error' } },
-      { status: 404 }
-    )
+    return Response.json({ error: { message: `Not found: ${req.method} ${path}`, type: 'invalid_request_error' } }, { status: 404 })
   },
 })
 
 console.log(`[sidecar] Listening on http://localhost:${PORT}`)
-console.log(`[sidecar] Configure Codex with base_url = "http://localhost:${PORT}"`)
 
 /**
- * Proxy a request using `tempo request` for automatic payment handling.
- * Supports the Tempo passkey wallet — no raw private keys needed.
+ * Proxy Codex requests. Pays via mppx session, then streams SSE through.
  */
-async function proxyViaTempoRequest(req: Request, upstreamUrl: string): Promise<Response> {
+async function proxyCodex(req: Request): Promise<Response> {
   const body = await req.text()
 
-  const args = [
-    'request', '-t',
-    '-X', req.method,
-    '-H', 'Content-Type: application/json',
-    '--json', body,
-    upstreamUrl,
-  ]
-
+  // First: make the paid request (non-streaming) to establish payment
+  // Then: make a streaming request using the same session
+  // Actually: mppx.fetch handles the 402 dance. We send stream:true
+  // and the server streams SSE. mppx.fetch handles payment on the first
+  // request, subsequent requests reuse the channel.
   try {
-    const proc = Bun.spawn([tempoBin, ...args], {
-      stdout: 'pipe',
-      stderr: 'pipe',
+    const response = await mppx.fetch(`${UNSTOPPABLE_URL}/codex/responses`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'text/event-stream' },
+      body,
     })
 
-    const [stdout, stderr] = await Promise.all([
-      new Response(proc.stdout).text(),
-      new Response(proc.stderr).text(),
-    ])
-
-    const exitCode = await proc.exited
-
-    if (exitCode !== 0) {
-      console.error(`[sidecar] tempo request failed (exit ${exitCode}):`, stderr || stdout)
-      return Response.json(
-        { type: 'error', error: { message: stderr || stdout || 'Payment failed', type: 'server_error' } },
-        { status: 502 }
-      )
+    if (!response.ok) {
+      const err = await response.text()
+      console.error(`[sidecar] Upstream ${response.status}:`, err.slice(0, 200))
+      return new Response(err, { status: response.status, headers: { 'Content-Type': 'application/json' } })
     }
 
-    // tempo request outputs the response body to stdout
-    // Detect if it's JSON or something else
-    const trimmed = stdout.trim()
-    const isJson = trimmed.startsWith('{') || trimmed.startsWith('[')
+    if (!response.body) {
+      return Response.json({ type: 'error', error: { message: 'No response body', type: 'server_error' } }, { status: 502 })
+    }
 
-    return new Response(stdout, {
-      status: 200,
-      headers: {
-        'Content-Type': isJson ? 'application/json' : 'text/plain',
+    // Filter out mppx payment events, pass through OpenAI events
+    const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>({
+      transform(chunk, controller) {
+        const text = new TextDecoder().decode(chunk)
+        const lines = text.split('\n')
+        const filtered: string[] = []
+        let skip = false
+        for (const line of lines) {
+          if (line.startsWith('event: payment-need-voucher') || line.startsWith('event: payment-receipt')) {
+            skip = true
+            continue
+          }
+          if (skip && line.startsWith('data:')) { skip = false; continue }
+          skip = false
+          filtered.push(line)
+        }
+        const out = filtered.join('\n')
+        if (out.trim()) controller.enqueue(new TextEncoder().encode(out))
       },
     })
+
+    response.body.pipeTo(writable).catch(() => {})
+
+    return new Response(readable, {
+      status: 200,
+      headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache, no-store', 'Connection': 'keep-alive', 'X-Accel-Buffering': 'no' },
+    })
+  } catch (err: any) {
+    console.error('[sidecar] Error:', err?.message || err)
+    if (err?.cause) console.error('[sidecar] Cause:', err.cause?.message || err.cause)
+    if (err?.stack) console.error('[sidecar] Stack:', err.stack)
+    return Response.json({ type: 'error', error: { message: err instanceof Error ? err.message : 'Proxy error', type: 'server_error' } }, { status: 502 })
+  }
+}
+
+async function proxyPassthrough(req: Request, path: string): Promise<Response> {
+  try {
+    return await mppx.fetch(`${UNSTOPPABLE_URL}${path}`, {
+      method: req.method,
+      headers: req.headers,
+      body: req.method !== 'GET' ? await req.text() : undefined,
+    })
   } catch (err) {
-    console.error('[sidecar] Error:', err instanceof Error ? err.message : err)
-    return Response.json(
-      { type: 'error', error: { message: err instanceof Error ? err.message : 'Proxy error', type: 'server_error' } },
-      { status: 502 }
-    )
+    return Response.json({ error: { message: 'Upstream error', type: 'server_error' } }, { status: 502 })
   }
 }
