@@ -73,3 +73,45 @@ export async function getBalance() {
 export async function requestPayout() {
   return apiFetch('/payout', { method: 'POST' })
 }
+
+// --- Codex token endpoints ---
+
+export async function importCodexTokens(
+  accessToken: string,
+  refreshToken: string,
+  idToken: string,
+  markupPct: number
+) {
+  return apiFetch('/codex/import', {
+    method: 'POST',
+    body: JSON.stringify({
+      access_token: accessToken,
+      refresh_token: refreshToken,
+      id_token: idToken,
+      markup_pct: markupPct,
+    }),
+  })
+}
+
+export async function startCodexLogin() {
+  return apiFetch('/codex/login', { method: 'POST' })
+}
+
+export async function pollCodexLogin(deviceAuthId: string, userCode: string, markupPct: number) {
+  return apiFetch('/codex/poll', {
+    method: 'POST',
+    body: JSON.stringify({
+      device_auth_id: deviceAuthId,
+      user_code: userCode,
+      markup_pct: markupPct,
+    }),
+  })
+}
+
+export async function listCodexTokens() {
+  return apiFetch('/codex/tokens')
+}
+
+export async function delistCodexToken(tokenId: string) {
+  return apiFetch(`/codex/tokens/${tokenId}`, { method: 'DELETE' })
+}
