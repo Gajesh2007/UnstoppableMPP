@@ -39,8 +39,8 @@ export const metadata: Metadata = {
     "gpt-5.4",
     "pay-per-token",
   ],
-  authors: [{ name: "Autonomy Labs" }],
-  creator: "Autonomy Labs",
+  authors: [{ name: "UnstoppableMPP" }],
+  creator: "UnstoppableMPP",
   metadataBase: new URL(siteUrl),
   alternates: {
     canonical: "/",
