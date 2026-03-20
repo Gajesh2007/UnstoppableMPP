@@ -2,7 +2,7 @@ import { Hono } from 'hono'
 import { getMppx } from '../mpp/setup'
 import { selectCheapestCodexToken } from './codex-token-selector'
 import { getModelPricing } from '../pricing/fetcher'
-import { proxyCodexToChatGPT } from './codex-handler'
+import { proxyCodexStreaming, proxyCodexBuffered } from './codex-handler'
 import { config } from '../config'
 
 const codex = new Hono()
@@ -52,7 +52,10 @@ codex.post('/responses', async (c) => {
     return result.challenge as Response
   }
 
-  const response = await proxyCodexToChatGPT(c.req.raw.headers, body, selectedToken)
+  const isStreaming = body.stream !== false
+  const response = isStreaming
+    ? await proxyCodexStreaming(c.req.raw.headers, body, selectedToken)
+    : await proxyCodexBuffered(c.req.raw.headers, body, selectedToken)
   return result.withReceipt(response) as Response
 })
 
