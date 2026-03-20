@@ -157,6 +157,7 @@ tempo wallet fund`}
             <h3 className="font-semibold">3. Make a Codex request</h3>
             <p className="text-sm text-muted-foreground">
               Uses the OpenAI Responses API format. Supports streaming and non-streaming.
+              Works with <code className="bg-muted px-1 rounded">gpt-5.3-codex</code> and <code className="bg-muted px-1 rounded">gpt-5.4</code>.
             </p>
             <pre className="bg-muted rounded-md p-3 text-sm overflow-x-auto">
 {`# Non-streaming (returns complete JSON)
@@ -199,7 +200,26 @@ wire_api = "responses"`}
 
       <Card>
         <CardHeader>
-          <CardTitle>Codex Endpoints</CardTitle>
+          <CardTitle>Supported Models</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-2 text-sm">
+            <div className="flex justify-between py-1">
+              <code>gpt-5.3-codex</code>
+              <span className="text-muted-foreground">Codex-optimized, fast</span>
+            </div>
+            <Separator />
+            <div className="flex justify-between py-1">
+              <code>gpt-5.4</code>
+              <span className="text-muted-foreground">Latest flagship model</span>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Endpoints</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="space-y-2 text-sm">
@@ -223,21 +243,21 @@ wire_api = "responses"`}
         <CardContent className="text-sm space-y-2 text-muted-foreground">
           <p>Billed exactly like OpenAI&apos;s API pricing plus seller markup:</p>
           <div className="bg-muted rounded-md p-3 space-y-1 font-mono text-xs">
-            <div className="flex justify-between">
-              <span>gpt-5.3-codex input</span>
-              <span className="text-foreground">$1.75 / 1M tokens</span>
+            <div className="flex justify-between font-semibold text-foreground border-b border-foreground/10 pb-1 mb-1">
+              <span>Model</span>
+              <span>Input / Cached / Output</span>
             </div>
             <div className="flex justify-between">
-              <span>gpt-5.3-codex cached input</span>
-              <span className="text-foreground">$0.175 / 1M tokens</span>
+              <span>gpt-5.3-codex</span>
+              <span className="text-foreground">$1.75 / $0.175 / $14.00</span>
             </div>
             <div className="flex justify-between">
-              <span>gpt-5.3-codex output</span>
-              <span className="text-foreground">$14.00 / 1M tokens</span>
+              <span>gpt-5.4</span>
+              <span className="text-foreground">$2.00 / $0.50 / $8.00</span>
             </div>
           </div>
-          <p>
-            Input tokens, cached input tokens, and output tokens are charged separately based on actual usage reported by OpenAI.
+          <p className="text-xs">
+            Per 1M tokens. Input, cached input, and output tokens are charged separately based on actual usage.
           </p>
         </CardContent>
       </Card>
