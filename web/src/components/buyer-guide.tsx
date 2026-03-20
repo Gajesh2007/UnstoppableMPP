@@ -168,7 +168,7 @@ tempo request -t -X POST \\
     "input": [{
       "type": "message",
       "role": "user",
-      "content": [{"type": "input_text", "text": "Explain restaking"}]
+      "content": [{"type": "input_text", "text": "Explain TEEs (Trusted Execution Environments)"}]
     }],
     "stream": false
   }' \\
@@ -182,18 +182,31 @@ tempo request -t -X POST \\
             <h3 className="font-semibold">4. Or use with Codex CLI</h3>
             <p className="text-sm text-muted-foreground">
               Run the local sidecar proxy to connect Codex CLI through MPP payments.
+              The sidecar uses your Tempo wallet to pay automatically.
             </p>
             <pre className="bg-muted rounded-md p-3 text-sm overflow-x-auto">
-{`# Start sidecar (handles MPP payments transparently)
-PRIVATE_KEY=0x... bun run sidecar
+{`# Clone and start the sidecar
+git clone https://github.com/Gajesh2007/UnstoppableMPP.git
+cd UnstoppableMPP
+bun install
+bun run sidecar
 
-# Configure Codex (~/.codex/config.toml)
+# In a separate terminal, configure Codex CLI
+# Add to ~/.codex/config.toml:
 [model_providers.unstoppable]
 name = "UnstoppableMPP"
 base_url = "http://localhost:4111"
 env_key = "UNSTOPPABLE_DUMMY"
-wire_api = "responses"`}
+wire_api = "responses"
+
+# Then run Codex with the provider
+codex --provider unstoppable`}
             </pre>
+            <p className="text-xs text-muted-foreground">
+              Requires <a href="https://bun.sh" target="_blank" rel="noopener noreferrer" className="underline">Bun</a> and
+              a funded <a href="https://tempo.xyz" target="_blank" rel="noopener noreferrer" className="underline">Tempo wallet</a>.
+              The sidecar handles MPP payment sessions transparently between Codex and the marketplace.
+            </p>
           </div>
         </CardContent>
       </Card>
