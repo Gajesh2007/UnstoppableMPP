@@ -44,8 +44,7 @@ function loadPrivateKey(): Hex {
   // Read from Tempo wallet (~/.tempo/wallet/keys.toml)
   const keysPath = join(homedir(), '.tempo', 'wallet', 'keys.toml')
   try {
-    const toml = Bun.file(keysPath).textSync()
-    // Parse the key field from TOML — look for key = "0x..."
+    const toml = require('fs').readFileSync(keysPath, 'utf8')
     const match = toml.match(/^key\s*=\s*"(0x[0-9a-fA-F]+)"/m)
     if (match) {
       console.log('[sidecar] Loaded key from Tempo wallet')
