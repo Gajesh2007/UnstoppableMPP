@@ -87,16 +87,22 @@ async function proxyCodex(req: Request): Promise<Response> {
   // and the server streams SSE. mppx.fetch handles payment on the first
   // request, subsequent requests reuse the channel.
   try {
+    console.log('[sidecar] Sending request to', `${UNSTOPPABLE_URL}/codex/responses`)
     const response = await mppx.fetch(`${UNSTOPPABLE_URL}/codex/responses`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Accept': 'text/event-stream' },
       body,
     })
 
+    console.log('[sidecar] Response:', response.status, response.headers.get('content-type'))
+
     if (!response.ok) {
       const err = await response.text()
-      console.error(`[sidecar] Upstream ${response.status}:`, err.slice(0, 200))
-      return new Response(err, { status: response.status, headers: { 'Content-Type': 'application/json' } })
+      console.error(`[sidecar] Upstream ${response.status}:`, err.slice(0, 500))
+      return new Response(err || JSON.stringify({ error: { message: `Upstream ${response.status}`, type: 'server_error' } }), {
+        status: response.status,
+        headers: { 'Content-Type': 'application/json' },
+      })
     }
 
     if (!response.body) {

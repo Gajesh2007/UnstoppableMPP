@@ -104,6 +104,7 @@ app.notFound((c) =>
 export default {
   port: config.port,
   fetch: app.fetch,
+  idleTimeout: 120, // seconds — MPP channel opens + ChatGPT responses can take time
 }
 
 console.log(`[server] UnstoppableMPP running on http://localhost:${config.port}`)
